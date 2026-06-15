@@ -1,0 +1,39 @@
+{
+  "appName": "Your App",
+  "versionBump": "pre",
+  "tauriBuildCommand": "pnpm tauri build",
+  "desktop": {
+    "windowsBuildCommand": "pnpm tauri build -- --target x86_64-pc-windows-msvc",
+    "macosBuildCommand": "pnpm tauri build -- --target aarch64-apple-darwin",
+    "linuxBuildCommand": "pnpm tauri build -- --target x86_64-unknown-linux-gnu"
+  },
+  "signing": {
+    "privateKeyPath": "~/.tauri/your-app.key",
+    "privateKeyPassword": "",
+    "envKeyVar": "YOUR_APP_SIGNING_PRIVATE_KEY",
+    "envPasswordVar": "YOUR_APP_SIGNING_PRIVATE_KEY_PASSWORD"
+  },
+  "github": {
+    "owner": "YOUR_GITHUB_OWNER",
+    "repo": "YOUR_REPO_NAME",
+    "defaultBranch": "master"
+  },
+  "gitcode": {
+    "owner": "YOUR_GITCODE_OWNER",
+    "repo": "YOUR_REPO_NAME",
+    "apiUrl": "https://api.gitcode.com/api/v5",
+    "defaultBranch": "master"
+  },
+  "mobile": {
+    "androidBuildCommand": "pnpm tauri android build -- --apk --aab",
+    "iosBuildCommand": "pnpm tauri ios build",
+    "artifactDirs": [],
+    "update": {
+      "target": "gitcode",
+      "versionSource": "latest-json",
+      "releasePageUrl": "",
+      "versionCheckUrl": "",
+      "releaseApiUrl": ""
+    }
+  }
+}
