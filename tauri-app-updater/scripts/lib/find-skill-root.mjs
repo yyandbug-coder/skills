@@ -34,7 +34,7 @@ export function printSkillInstallHint() {
   console.error('[updater-skill] 未找到 tauri-app-updater skill')
   console.error('')
   console.error('  安装 Skill（每台电脑一次）：')
-  console.error('    npx skills add yyandbug-coder/kitty-tools --skill tauri-app-updater -g -y')
+  console.error('    npx skills add yyandbug-coder/skills --skill tauri-app-updater -g -y')
   console.error('')
   console.error('  接入当前项目（每个项目一次）：')
   console.error('    node ~/.agents/skills/tauri-app-updater/scripts/init-project.mjs')

@@ -64,14 +64,14 @@ project/
 
 ```bash
 # 1. 安装 Skill（每台电脑一次）
-npx skills add yyandbug-coder/kitty-tools --skill tauri-app-updater -g -y
+npx skills add yyandbug-coder/skills --skill tauri-app-updater -g -y
 
 # 2. 接入项目（每个项目一次）
 node ~/.agents/skills/tauri-app-updater/scripts/init-project.mjs
 pnpm install
 ```
 
-仓库：[github.com/yyandbug-coder/kitty-tools](https://github.com/yyandbug-coder/kitty-tools)（`owner/repo` 简写默认解析为 GitHub）
+仓库：[github.com/yyandbug-coder/skills](https://github.com/yyandbug-coder/skills)
 
 ## release.config.json 字段
 

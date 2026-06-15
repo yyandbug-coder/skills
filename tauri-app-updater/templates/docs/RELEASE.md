@@ -5,7 +5,7 @@
 ## 安装 Skill（其他 Tauri 项目）
 
 ```bash
-npx skills add yyandbug-coder/kitty-tools --skill tauri-app-updater -g -y
+npx skills add yyandbug-coder/skills --skill tauri-app-updater -g -y
 node ~/.agents/skills/tauri-app-updater/scripts/init-project.mjs
 pnpm install
 ```
