@@ -27,7 +27,9 @@ export function readPlatformArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     if (argv[index] !== '--platform') continue
     const value = argv[index + 1]
-    if (!value) continue
+    if (!value || value.startsWith('-')) {
+      throw new Error('[release-platforms] --platform 缺少平台值，例如：--platform desktop,android')
+    }
     for (const part of value.split(',')) {
       const token = part.trim().toLowerCase()
       if (token) tokens.push(token)
@@ -171,6 +173,57 @@ export function allowsDesktopArtifact(fileName, selection) {
 }
 
 /**
+ * 是否为「桌面 + 移动端」一体发版脚本（如 pnpm tauri:deploy）。
+ * @param {string} command
+ */
+function isCombinedBuildCommand(command) {
+  return /\b(tauri:deploy|tauri:release|tauri-deploy|tauri-release)\b/.test(command)
+}
+
+/**
+ * @param {string} command
+ */
+function isProjectReleaseScript(command) {
+  return /\b(tauri-release\.mjs|tauri-deploy\.mjs)\b/.test(command)
+}
+
+/**
+ * @param {string} command
+ * @param {string} flag
+ */
+function appendCliFlag(command, flag) {
+  if (new RegExp(`\\s${flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(command)) {
+    return command
+  }
+  return `${command} ${flag}`
+}
+
+/**
+ * 桌面（当前主机）实际使用的构建命令。
+ * @param {Record<string, unknown>} releaseCfg
+ * @param {Record<string, unknown>} desktopCfg
+ */
+function resolveEffectiveDefaultDesktopCommand(releaseCfg, desktopCfg) {
+  if (typeof desktopCfg.defaultBuildCommand === 'string' && desktopCfg.defaultBuildCommand.trim()) {
+    return desktopCfg.defaultBuildCommand.trim()
+  }
+  return String(releaseCfg.tauriBuildCommand || 'pnpm tauri build')
+}
+
+/**
+ * 仅选「桌面（当前主机）」时的默认构建命令。
+ * @param {Record<string, unknown>} releaseCfg
+ * @param {Record<string, unknown>} desktopCfg
+ */
+function resolveDesktopDefaultCommand(releaseCfg, desktopCfg) {
+  const command = resolveEffectiveDefaultDesktopCommand(releaseCfg, desktopCfg)
+  if (isCombinedBuildCommand(command)) {
+    return appendCliFlag(command, '--skip-android')
+  }
+  return command
+}
+
+/**
  * @param {PlatformSelection} selection
  * @param {Record<string, unknown>} releaseCfg
  * @param {Record<string, unknown>} releaseConfigRaw
@@ -178,11 +231,38 @@ export function allowsDesktopArtifact(fileName, selection) {
 export function resolveBuildCommands(selection, releaseCfg, releaseConfigRaw) {
   const desktopCfg = releaseConfigRaw.desktop ?? {}
   const mobileCfg = releaseConfigRaw.mobile ?? {}
+  const defaultDesktopCommand = resolveEffectiveDefaultDesktopCommand(releaseCfg, desktopCfg)
+  const wantsDesktop = hasDesktopBuild(selection)
+  const wantsMobile = hasMobileBuild(selection)
+  const usesDefaultDesktopOnly =
+    selection.useDefaultDesktopBuild && !selection.windows && !selection.macos && !selection.linux
+
   /** @type {string[]} */
   const commands = []
 
+  // 一体发版脚本：按所选平台追加 --skip-android，避免「只选桌面仍打 Android」
+  if (isCombinedBuildCommand(defaultDesktopCommand) && usesDefaultDesktopOnly) {
+    if (wantsDesktop && wantsMobile) {
+      commands.push(defaultDesktopCommand)
+      return commands
+    }
+    if (wantsDesktop) {
+      commands.push(appendCliFlag(defaultDesktopCommand, '--skip-android'))
+      return commands
+    }
+    if (wantsMobile) {
+      if (selection.android) {
+        commands.push(mobileCfg.androidBuildCommand || 'pnpm tauri android build -- --apk --aab')
+      }
+      if (selection.ios) {
+        commands.push(mobileCfg.iosBuildCommand || 'pnpm tauri ios build')
+      }
+      return commands
+    }
+  }
+
   if (selection.useDefaultDesktopBuild) {
-    commands.push(String(releaseCfg.tauriBuildCommand || 'pnpm tauri build'))
+    commands.push(resolveDesktopDefaultCommand(releaseCfg, desktopCfg))
   }
   if (selection.windows) {
     commands.push(
@@ -207,6 +287,22 @@ export function resolveBuildCommands(selection, releaseCfg, releaseConfigRaw) {
   }
 
   return commands
+}
+
+/**
+ * 将发版选项（如 --skip-bump）附加到项目自定义构建脚本。
+ * Skill 自身已跳过 bump，但 pnpm tauri:deploy / tauri-release.mjs 等仍会在构建末尾递增版本，须透传。
+ *
+ * @param {string} command
+ * @param {{ skipBump?: boolean }} [options]
+ */
+export function applyReleaseBuildOptions(command, options = {}) {
+  let cmd = String(command)
+  if (!options.skipBump) return cmd
+  if (isCombinedBuildCommand(cmd) || isProjectReleaseScript(cmd)) {
+    cmd = appendCliFlag(cmd, '--skip-bump')
+  }
+  return cmd
 }
 
 /**

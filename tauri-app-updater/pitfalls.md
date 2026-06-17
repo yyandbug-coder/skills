@@ -40,7 +40,14 @@
 | 同上 | 始终提示已是最新 | 确认 `release.config.json` 的 `mobile.update` 与 Release 中 latest.json / tag 一致 |
 | 仅移动端发版 | `latest.json` 不存在导致检查失败 | 将 `mobile.update.versionSource` 改为 `release-api` |
 
-## 发版后验证
+## 版本号与 `--skip-bump`
+
+| 现象 | 原因 | 处理 |
+|------|------|------|
+| 选了「保持当前版本」但 `package.json` 仍 patch +1 | `tauriBuildCommand` 配了 `pnpm tauri:deploy` 等一体脚本，Skill 跳过了自身 bump，但脚本末尾仍会 `bump-version.mjs` | 将 `tauriBuildCommand` 改为 `pnpm tauri build`；或确保 Skill 已透传 `--skip-bump`（v2025-06 起） |
+| `Info.plist` 从旧版变为与 `tauri.conf.json` 一致 | **不是 bump**：`src-tauri/gen/apple/**/Info.plist` 为生成文件，构建时会从 `tauri.conf.json` 同步版本 | 若源文件已是目标版本，可忽略；勿单独手改 gen 目录 |
+| `tauriBuildCommand` 用了项目 deploy 脚本 | deploy 默认构建+上传+bump 一条龙 | Skill 发版用 `desktop.defaultBuildCommand` / `mobile.*BuildCommand` 分平台构建 |
+
 
 ```bash
 # 1. latest.json

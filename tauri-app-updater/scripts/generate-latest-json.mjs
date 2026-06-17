@@ -23,7 +23,27 @@ function readArg(name) {
 
 const version = readArg('--version') || tauriConfig.version
 const notes = readArg('--notes') || `${appName} ${version}`
-const bundleRoot = readArg('--bundle-root') || join(projectRoot, 'src-tauri/target/release/bundle')
+
+function readBundleRoots() {
+  /** @type {string[]} */
+  const roots = []
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== '--bundle-root') continue
+    const value = args[index + 1]
+    if (!value) continue
+    for (const part of value.split(',')) {
+      const trimmed = part.trim()
+      if (trimmed) roots.push(trimmed)
+    }
+    index += 1
+  }
+  if (roots.length === 0) {
+    roots.push(join(projectRoot, 'src-tauri/target/release/bundle'))
+  }
+  return roots
+}
+
+const bundleRoots = readBundleRoots()
 const target = readArg('--target') || process.env.RELEASE_TARGET || 'gitcode'
 const releaseBaseUrl =
   process.env.RELEASE_BASE_URL ?? resolveReleaseBaseUrl(target, releaseConfigRaw, version)
@@ -70,7 +90,8 @@ function detectMacPlatform(fileName) {
 
 /** @type {Record<string, { url: string, signature: string }>} */
 const platforms = {}
-const bundleFiles = collectFiles(bundleRoot)
+/** @type {string[]} */
+const bundleFiles = bundleRoots.flatMap((root) => collectFiles(root))
 
 for (const pair of findAllBundlePairs(bundleFiles, '.exe')) {
   platforms['windows-x86_64'] = { url: toReleaseUrl(pair.name), signature: readSig(pair.sig) }

@@ -1,19 +1,18 @@
+#!/usr/bin/env node
 /**
- * 根据 Tauri 构建产物生成 latest.json（供 tauri-plugin-updater 静态端点使用）。
- *
- * 用法（在项目根目录）：
- *   node scripts/generate-latest-json.mjs --version 0.1.0 --notes "修复若干问题"
- *
- * 环境变量：
- *   RELEASE_BASE_URL — 安装包下载前缀，默认 GitCode Release 地址
+ * 根据 Tauri 构建产物生成 latest.json（Skill 内置，从项目根调用）。
  */
-import { basename, join, resolve } from 'node:path'
+import { basename, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 
-const projectRoot = resolve(import.meta.dirname, '..')
+import { getAppDisplayName, loadReleaseConfigRaw } from './lib/load-release-config.mjs'
+import { resolveReleaseBaseUrl } from './lib/release-targets.mjs'
+import { getProjectRoot } from './lib/skill-paths.mjs'
+
+const projectRoot = getProjectRoot()
 const tauriConfig = JSON.parse(readFileSync(join(projectRoot, 'src-tauri/tauri.conf.json'), 'utf8'))
-const releaseConfigRaw = JSON.parse(readFileSync(join(projectRoot, 'release.config.json'), 'utf8'))
-const gitcodeCfg = releaseConfigRaw.gitcode ?? {}
+const releaseConfigRaw = loadReleaseConfigRaw(projectRoot)
+const appName = getAppDisplayName(projectRoot, releaseConfigRaw)
 
 const args = process.argv.slice(2)
 function readArg(name) {
@@ -23,14 +22,31 @@ function readArg(name) {
 }
 
 const version = readArg('--version') || tauriConfig.version
-const notes = readArg('--notes') || `Kitty Tools ${version}`
-const bundleRoot = readArg('--bundle-root') || join(projectRoot, 'src-tauri/target/release/bundle')
-const owner = gitcodeCfg.owner ?? 'yyandbug'
-const repo = gitcodeCfg.repo ?? 'kitty-tools'
-const tagName = version.startsWith('v') ? version : `v${version}`
+const notes = readArg('--notes') || `${appName} ${version}`
+
+function readBundleRoots() {
+  /** @type {string[]} */
+  const roots = []
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== '--bundle-root') continue
+    const value = args[index + 1]
+    if (!value) continue
+    for (const part of value.split(',')) {
+      const trimmed = part.trim()
+      if (trimmed) roots.push(trimmed)
+    }
+    index += 1
+  }
+  if (roots.length === 0) {
+    roots.push(join(projectRoot, 'src-tauri/target/release/bundle'))
+  }
+  return roots
+}
+
+const bundleRoots = readBundleRoots()
+const target = readArg('--target') || process.env.RELEASE_TARGET || 'gitcode'
 const releaseBaseUrl =
-  process.env.RELEASE_BASE_URL ??
-  `https://api.gitcode.com/api/v5/repos/${owner}/${repo}/releases/${tagName}/attach_files`
+  process.env.RELEASE_BASE_URL ?? resolveReleaseBaseUrl(target, releaseConfigRaw, version)
 
 function readSig(path) {
   return readFileSync(path, 'utf8').trim()
@@ -40,11 +56,8 @@ function collectFiles(dir, acc = []) {
   if (!existsSync(dir)) return acc
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const fullPath = join(dir, entry.name)
-    if (entry.isDirectory()) {
-      collectFiles(fullPath, acc)
-    } else {
-      acc.push(fullPath)
-    }
+    if (entry.isDirectory()) collectFiles(fullPath, acc)
+    else acc.push(fullPath)
   }
   return acc
 }
@@ -61,41 +74,32 @@ function findAllBundlePairs(files, extension) {
 }
 
 function toReleaseUrl(fileName) {
+  if (target === 'github') {
+    return `${releaseBaseUrl}/${encodeURIComponent(fileName)}`
+  }
   return `${releaseBaseUrl}/${encodeURIComponent(fileName)}/download`
 }
 
 function detectMacPlatform(fileName) {
   const lower = fileName.toLowerCase()
-  if (lower.includes('aarch64') || lower.includes('arm64')) {
-    return 'darwin-aarch64'
-  }
-  if (lower.includes('x64') || lower.includes('x86_64') || lower.includes('intel')) {
-    return 'darwin-x86_64'
-  }
-  if (lower.includes('universal')) {
-    return 'darwin-universal'
-  }
+  if (lower.includes('aarch64') || lower.includes('arm64')) return 'darwin-aarch64'
+  if (lower.includes('x64') || lower.includes('x86_64') || lower.includes('intel')) return 'darwin-x86_64'
+  if (lower.includes('universal')) return 'darwin-universal'
   return null
 }
 
 /** @type {Record<string, { url: string, signature: string }>} */
 const platforms = {}
-
-const bundleFiles = collectFiles(bundleRoot)
+/** @type {string[]} */
+const bundleFiles = bundleRoots.flatMap((root) => collectFiles(root))
 
 for (const pair of findAllBundlePairs(bundleFiles, '.exe')) {
-  platforms['windows-x86_64'] = {
-    url: toReleaseUrl(pair.name),
-    signature: readSig(pair.sig),
-  }
+  platforms['windows-x86_64'] = { url: toReleaseUrl(pair.name), signature: readSig(pair.sig) }
 }
 
 for (const pair of findAllBundlePairs(bundleFiles, '.app.tar.gz')) {
   const platform = detectMacPlatform(pair.name)
-  const entry = {
-    url: toReleaseUrl(pair.name),
-    signature: readSig(pair.sig),
-  }
+  const entry = { url: toReleaseUrl(pair.name), signature: readSig(pair.sig) }
   if (platform === 'darwin-universal') {
     platforms['darwin-aarch64'] = entry
     platforms['darwin-x86_64'] = entry
@@ -107,10 +111,7 @@ for (const pair of findAllBundlePairs(bundleFiles, '.app.tar.gz')) {
 }
 
 for (const pair of findAllBundlePairs(bundleFiles, '.AppImage')) {
-  platforms['linux-x86_64'] = {
-    url: toReleaseUrl(pair.name),
-    signature: readSig(pair.sig),
-  }
+  platforms['linux-x86_64'] = { url: toReleaseUrl(pair.name), signature: readSig(pair.sig) }
 }
 
 if (Object.keys(platforms).length === 0) {
@@ -118,13 +119,7 @@ if (Object.keys(platforms).length === 0) {
   process.exit(1)
 }
 
-const manifest = {
-  version,
-  notes,
-  pub_date: new Date().toISOString(),
-  platforms,
-}
-
+const manifest = { version, notes, pub_date: new Date().toISOString(), platforms }
 const outDir = join(projectRoot, 'releases')
 mkdirSync(outDir, { recursive: true })
 const outPath = join(outDir, 'latest.json')

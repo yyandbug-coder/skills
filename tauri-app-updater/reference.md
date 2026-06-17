@@ -81,6 +81,7 @@ pnpm install
   "versionBump": "pre",
   "tauriBuildCommand": "pnpm tauri build",
   "desktop": {
+    "defaultBuildCommand": "pnpm tauri build",
     "windowsBuildCommand": "pnpm tauri build -- --target x86_64-pc-windows-msvc",
     "macosBuildCommand": "pnpm tauri build -- --target aarch64-apple-darwin",
     "linuxBuildCommand": "pnpm tauri build -- --target x86_64-unknown-linux-gnu"
@@ -123,11 +124,12 @@ pnpm install
 
 | 字段 | 说明 |
 |------|------|
+| `defaultBuildCommand` | `--platform desktop` 时执行（优先于 `tauriBuildCommand`） |
 | `windowsBuildCommand` | `--platform windows` 时执行 |
 | `macosBuildCommand` | `--platform macos` 时执行 |
 | `linuxBuildCommand` | `--platform linux` 时执行 |
 
-`--platform desktop` 仍使用顶层 `tauriBuildCommand`（当前主机默认构建）。
+`--platform desktop` 默认使用 `desktop.defaultBuildCommand`，否则 `tauriBuildCommand`（须为**仅桌面**构建，如 `pnpm tauri build`）。若配置了 `pnpm tauri:deploy` 等一体脚本，Skill 会按所选平台自动追加 `--skip-android` 或只跑移动端命令。
 
 ### 移动端字段（`mobile`）
 

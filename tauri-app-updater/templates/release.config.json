@@ -3,6 +3,7 @@
   "versionBump": "pre",
   "tauriBuildCommand": "pnpm tauri build",
   "desktop": {
+    "defaultBuildCommand": "pnpm tauri build",
     "windowsBuildCommand": "pnpm tauri build -- --target x86_64-pc-windows-msvc",
     "macosBuildCommand": "pnpm tauri build -- --target aarch64-apple-darwin",
     "linuxBuildCommand": "pnpm tauri build -- --target x86_64-unknown-linux-gnu"

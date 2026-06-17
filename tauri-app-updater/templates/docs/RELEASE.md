@@ -152,8 +152,10 @@ $env:GITCODE_TOKEN = "你的Token"
 适合 CI 或脚本化场景。入口：
 
 ```bash
-pnpm release [options]
+pnpm release:cli [options]
 ```
+
+交互式向导请用 `pnpm create:release` 或 `pnpm release`（不带 CLI 参数）。
 
 ### 常用参数
 
@@ -162,8 +164,9 @@ pnpm release [options]
 | `--skip-bump` | 不修改版本号，使用当前版本 |
 | `--set-version 0.1.3` | 指定目标版本 |
 | `--part patch` | 自动递增 patch（还有 `minor` / `major`） |
+| `--platform desktop,android` | 选择发版平台（可多选） |
 | `--skip-build` | 跳过 `pnpm tauri build` |
-| `--upload` | 上传到 GitCode Release |
+| `--upload` | 上传到 release.config.json 中已配置的 GitHub / GitCode |
 | `--push` | 提交代码、打 tag、`git push` |
 | `--publish` | 等价于 `--push --upload` |
 | `--notes "说明文字"` | Release 更新说明 |
@@ -174,47 +177,47 @@ pnpm release [options]
 #### 1. 仅打包当前版本（不上传）
 
 ```bash
-pnpm release --skip-bump
+pnpm release:cli --skip-bump
 ```
 
 #### 2. 打包指定版本（不上传）
 
 ```bash
-pnpm release --set-version 0.1.2
+pnpm release:cli --set-version 0.1.2
 ```
 
 #### 3. 打包当前版本并上传
 
 ```bash
 $env:GITCODE_TOKEN = "你的Token"
-pnpm release --skip-bump --upload --notes "修复更新下载"
+pnpm release:cli --skip-bump --upload --notes "修复更新下载"
 ```
 
 #### 4. 升版本、打包、上传
 
 ```bash
 $env:GITCODE_TOKEN = "你的Token"
-pnpm release --part patch --upload --notes "新功能"
+pnpm release:cli --part patch --upload --notes "新功能"
 ```
 
 #### 5. 完整发布（构建 + 上传 + 推 tag）
 
 ```bash
 $env:GITCODE_TOKEN = "你的Token"
-pnpm release --part patch --publish --notes "正式发版"
+pnpm release:cli --part patch --publish --notes "正式发版"
 ```
 
 #### 6. 仅上传已有产物
 
 ```bash
 $env:GITCODE_TOKEN = "你的Token"
-pnpm release --skip-bump --skip-build --upload
+pnpm release:cli --skip-bump --skip-build --upload
 ```
 
 #### 7. 预览将执行的步骤
 
 ```bash
-pnpm release --dry-run --skip-bump --upload
+pnpm release:cli --dry-run --skip-bump --upload
 ```
 
 ---
@@ -232,7 +235,7 @@ pnpm release --dry-run --skip-bump --upload
 
 ## 产物说明
 
-执行 `pnpm release` 或交互式向导后，主要产物位置：
+执行 `pnpm create:release` 或交互式向导后，主要产物位置：
 
 ```
 releases/
@@ -324,9 +327,9 @@ $env:GITCODE_TOKEN = "你的Token"
 
 | 我想… | 交互式 | 命令行 |
 |-------|--------|--------|
-| 本地打包测试 | `pnpm create:release` → 仅打包 | `pnpm release --skip-bump` |
-| 打包指定版本 | → **指定版本号** → 输入如 `0.1.3` | `pnpm release --set-version 0.1.3` |
-| 打包并上传 | → 打包并上传 | `pnpm release --skip-bump --upload` |
-| 发新版本 | → 自动递增 patch | `pnpm release --part patch --upload` |
-| 只上传不构建 | → 仅上传 → **指定版本号** | `pnpm release --set-version 0.1.3 --skip-build --upload` |
-| 预览流程 | → 预览流程 | `pnpm release --dry-run` |
+| 本地打包测试 | `pnpm create:release` → 仅打包 | `pnpm release:cli --skip-bump` |
+| 打包指定版本 | → **指定版本号** → 输入如 `0.1.3` | `pnpm release:cli --set-version 0.1.3` |
+| 打包并上传 | → 打包并上传 | `pnpm release:cli --skip-bump --upload` |
+| 发新版本 | → 自动递增 patch | `pnpm release:cli --part patch --upload` |
+| 只上传不构建 | → 仅上传 → **指定版本号** | `pnpm release:cli --set-version 0.1.3 --skip-build --upload` |
+| 预览流程 | → 预览流程 | `pnpm release:cli --dry-run` |

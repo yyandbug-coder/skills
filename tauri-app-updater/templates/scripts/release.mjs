@@ -9,18 +9,23 @@ import { basename, join, relative } from 'node:path'
 
 import { createBuildEnv, getAppDisplayName, loadReleaseConfigRaw } from './lib/load-release-config.mjs'
 import {
-  collectDesktopBundleFiles,
+  collectDesktopBundleFilesFromRoots,
   collectMobileArtifacts,
   mobileArtifactDestName,
+  resolveDesktopBundleRoots,
 } from './lib/release-artifacts.mjs'
 import {
+  applyReleaseBuildOptions,
   describeBuildPlan,
   hasDesktopBuild,
+  hasMobileBuild,
   platformSelectionLabel,
+  readPlatformArgs,
 } from './lib/release-platforms.mjs'
 import { listConfiguredReleaseTargets, resolveReleaseBaseUrl } from './lib/release-targets.mjs'
 import { getProjectVersion, getTauriReleaseUtils, setProjectVersion } from './lib/project-version.mjs'
 import { getProjectRoot, getSkillRoot } from './lib/skill-paths.mjs'
+import { splitShellCommand } from './lib/shell-command.mjs'
 
 const projectRoot = getProjectRoot()
 const skillScripts = join(getSkillRoot(), 'scripts')
@@ -56,6 +61,11 @@ function run(command, commandArgs, options = {}) {
   if (result.status !== 0) {
     process.exit(result.status ?? 1)
   }
+}
+
+function runBuildCommand(commandString, options = {}) {
+  const { bin, args: commandArgs } = splitShellCommand(commandString)
+  run(bin, commandArgs, options)
 }
 
 const dryRun = hasFlag('--dry-run')
@@ -116,9 +126,10 @@ const tagName = `v${version}`
 const releaseTargets = listConfiguredReleaseTargets(releaseConfigRaw)
 const primaryTarget = releaseTargets.includes('gitcode') ? 'gitcode' : releaseTargets[0] || 'gitcode'
 const releaseBaseUrl =
-  process.env.RELEASE_BASE_URL || resolveReleaseBaseUrl(primaryTarget, releaseConfigRaw, version)
+  process.env.RELEASE_BASE_URL ||
+  (releaseTargets.length > 0 ? resolveReleaseBaseUrl(primaryTarget, releaseConfigRaw, version) : '')
 
-if (releaseTargets.length === 0) {
+if ((shouldUpload || shouldPush) && releaseTargets.length === 0) {
   console.error('[release] release.config.json 需配置 github 或 gitcode')
   process.exit(1)
 }
@@ -127,20 +138,32 @@ function resolveBuildCommands() {
   return describeBuildPlan(platformSelection, releaseCfg, releaseConfigRaw)
 }
 
+function resolveBuildCommandsForRun() {
+  return resolveBuildCommands().map((cmd) => applyReleaseBuildOptions(cmd, { skipBump }))
+}
+
+const bundleRoots = resolveDesktopBundleRoots(projectRoot, platformSelection)
+const bundleRootArg = bundleRoots.join(',')
+
 if (dryRun) {
   console.log('\n[release] dry-run 完成。将执行：')
   console.log(`  平台：${platformSelectionLabel(platformSelection)}`)
-  for (const command of resolveBuildCommands()) {
+  for (const command of resolveBuildCommandsForRun()) {
     console.log(`  构建：${command}`)
   }
   if (hasDesktopBuild(platformSelection)) {
-    console.log(`  生成：releases/latest.json（${releaseBaseUrl}）`)
+    console.log(`  产物目录：${bundleRoots.map((root) => relative(projectRoot, root)).join(', ')}`)
+    console.log(`  生成：releases/latest.json${releaseBaseUrl ? `（${releaseBaseUrl}）` : ''}`)
   } else {
     console.log('  生成：跳过 latest.json（仅移动端）')
   }
   console.log(`  Tag：${tagName}`)
   if (shouldPush) console.log(`  Git：commit + tag ${tagName} + push`)
-  if (shouldUpload) console.log(`  上传：${releaseTargets.join(' + ')}`)
+  if (shouldUpload) {
+    console.log(
+      `  上传：${releaseTargets.length > 0 ? releaseTargets.join(' + ') : '（未配置远程平台）'}`,
+    )
+  }
   process.exit(0)
 }
 
@@ -191,18 +214,18 @@ if (!skipBuild) {
     }
   }
 
-  for (const buildCmd of resolveBuildCommands()) {
-    const [buildBin, ...buildArgs] = buildCmd.split(/\s+/)
-    run(buildBin, buildArgs)
+  for (const command of resolveBuildCommandsForRun()) {
+    runBuildCommand(command, {
+      env: skipBump ? { TAURI_RELEASE_SKIP_BUMP: '1' } : {},
+    })
   }
 }
 
-const bundleRoot = join(projectRoot, 'src-tauri/target/release/bundle')
 const artifactDir = join(projectRoot, 'releases/artifacts')
 mkdirSync(artifactDir, { recursive: true })
 
 if (hasDesktopBuild(platformSelection)) {
-  for (const file of collectDesktopBundleFiles(bundleRoot, platformSelection)) {
+  for (const file of collectDesktopBundleFilesFromRoots(bundleRoots, platformSelection)) {
     cpSync(file, join(artifactDir, basename(file)), { force: true })
   }
 }
@@ -223,7 +246,9 @@ if (hasMobileBuild(platformSelection)) {
 }
 
 const desktopArtifacts = hasDesktopBuild(platformSelection)
-  ? collectDesktopBundleFiles(bundleRoot, platformSelection).filter((file) => !file.endsWith('.sig'))
+  ? collectDesktopBundleFilesFromRoots(bundleRoots, platformSelection).filter(
+      (file) => !file.endsWith('.sig'),
+    )
   : []
 
 if (desktopArtifacts.length > 0) {
@@ -234,7 +259,7 @@ if (desktopArtifacts.length > 0) {
     '--notes',
     notes,
     '--bundle-root',
-    bundleRoot,
+    bundleRootArg,
     '--target',
     primaryTarget,
   ], {
@@ -242,6 +267,10 @@ if (desktopArtifacts.length > 0) {
   })
 
   cpSync(join(projectRoot, 'releases/latest.json'), join(artifactDir, 'latest.json'), { force: true })
+} else if (hasDesktopBuild(platformSelection)) {
+  console.warn(
+    `[release] 未在以下目录找到桌面产物：${bundleRoots.map((root) => relative(projectRoot, root)).join(', ')}`,
+  )
 } else {
   console.log('[release] 无桌面产物，跳过 latest.json（移动端包将直接上传到 Release）')
 }
@@ -266,10 +295,18 @@ if (shouldPush) {
 if (shouldUpload) {
   const hasGithubToken = Boolean(process.env.GITHUB_TOKEN || process.env.GH_TOKEN)
   const hasGitcodeToken = Boolean(process.env.GITCODE_TOKEN)
-  if (!hasGithubToken && !hasGitcodeToken) {
-    console.error('\n[release] --upload 需要设置 GITHUB_TOKEN（或 GH_TOKEN）和/或 GITCODE_TOKEN')
-    process.exit(1)
+  const configuredNeedGithub = releaseTargets.includes('github')
+  const configuredNeedGitcode = releaseTargets.includes('gitcode')
+  const missingGithub = configuredNeedGithub && !hasGithubToken
+  const missingGitcode = configuredNeedGitcode && !hasGitcodeToken
+
+  if (missingGithub || missingGitcode) {
+    const missing = []
+    if (missingGithub) missing.push('GITHUB_TOKEN / GH_TOKEN')
+    if (missingGitcode) missing.push('GITCODE_TOKEN')
+    console.warn(`\n[release] 警告：缺少 ${missing.join('、')}，对应平台将在 upload 阶段跳过`)
   }
+
   run('node', [
     join(skillScripts, 'upload-release.mjs'),
     '--tag',
@@ -283,7 +320,7 @@ if (shouldUpload) {
     '--dir',
     'releases/artifacts',
     '--bundle-root',
-    bundleRoot,
+    bundleRootArg,
     '--skip-json',
   ])
   console.log(`\n[release] 已上传到所有可用平台：${tagName}`)

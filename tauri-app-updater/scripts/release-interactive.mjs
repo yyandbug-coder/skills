@@ -13,9 +13,11 @@ import {
   hasDesktopBuild,
   normalizePlatformSelection,
   platformSelectionLabel,
+  applyReleaseBuildOptions,
 } from './lib/release-platforms.mjs'
 import { getProjectVersion } from './lib/project-version.mjs'
 import { getProjectRoot, getSkillRoot } from './lib/skill-paths.mjs'
+import { listConfiguredReleaseTargets } from './lib/release-targets.mjs'
 
 const projectRoot = getProjectRoot()
 const p = await importFromProject(projectRoot, '@clack/prompts')
@@ -190,7 +192,12 @@ async function main() {
     if (pushTag) releaseArgs.push('--push')
   }
 
-  const buildCommands = describeBuildPlan(platformSelection, { tauriBuildCommand: releaseConfigRaw.tauriBuildCommand || 'pnpm tauri build' }, releaseConfigRaw)
+  const skipBumpForBuild = versionStrategy === 'keep'
+  const buildCommands = describeBuildPlan(
+    platformSelection,
+    { tauriBuildCommand: releaseConfigRaw.tauriBuildCommand || 'pnpm tauri build' },
+    releaseConfigRaw,
+  ).map((cmd) => applyReleaseBuildOptions(cmd, { skipBump: skipBumpForBuild }))
   const buildLabel =
     action === 'upload-only'
       ? '跳过构建'
@@ -198,13 +205,17 @@ async function main() {
         ? '预览（不构建）'
         : buildCommands.join('\n  ')
 
+  const releaseTargets = listConfiguredReleaseTargets(releaseConfigRaw)
+  const uploadTargetLabel =
+    releaseTargets.length > 0 ? releaseTargets.join(' + ') : '未配置远程平台'
+
   p.note(
     [
       `操作：${actionLabel(action)}`,
       `平台：${platformSelectionLabel(platformSelection)}`,
       `版本：${versionLabel}`,
       `构建：${buildLabel}`,
-      `上传：${upload ? '是（GitHub + GitCode）' : '否'}`,
+      `上传：${upload ? `是（${uploadTargetLabel}）` : '否'}`,
       `推送 Git tag：${pushTag ? '是' : '否'}`,
       `说明：${String(notes).trim() || defaultNotes}`,
       '',
