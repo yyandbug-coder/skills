@@ -104,7 +104,7 @@ pnpm install
     "defaultBranch": "master"
   },
   "mobile": {
-    "androidBuildCommand": "pnpm tauri android build --apk --aab",
+    "androidBuildCommand": "pnpm tauri android build",
     "iosBuildCommand": "pnpm tauri ios build",
     "artifactDirs": [],
     "update": {
@@ -135,7 +135,7 @@ pnpm install
 
 | 字段 | 说明 |
 |------|------|
-| `androidBuildCommand` | Android 构建命令，默认 `pnpm tauri android build --apk --aab`（`--apk`/`--aab` 是 Tauri CLI 选项，勿写在 `--` 后面） |
+| `androidBuildCommand` | Android 构建命令，默认 `pnpm tauri android build`（默认即同时生成 APK + AAB；勿加 `--apk`/`--aab`，旧版 CLI 会把它们误传给 cargo） |
 | `iosBuildCommand` | iOS 构建命令，默认 `pnpm tauri ios build` |
 | `artifactDirs` | 额外搜索 `.apk` / `.aab` / `.ipa` 的目录（相对项目根或绝对路径） |
 

@@ -47,7 +47,7 @@ const defaultConfig = {
     defaultBranch: 'master',
   },
   mobile: {
-    androidBuildCommand: 'pnpm tauri android build --apk --aab',
+    androidBuildCommand: 'pnpm tauri android build',
     iosBuildCommand: 'pnpm tauri ios build',
     artifactDirs: [],
     update: {

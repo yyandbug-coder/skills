@@ -31,8 +31,8 @@
 
 | 模块 | 典型症状 | 原因与处理 |
 |------|----------|------------|
-| `release.mjs --platform android` | 未找到 Android 产物 | 先执行 `pnpm tauri android build --apk --aab`；产物在 `src-tauri/gen/android/app/build/outputs/` |
-| `tauri android build` | `cargo build ... --apk --aab` exited with code 1；cargo 提示 `try '--help'` | `--apk`/`--aab` 是 **Tauri CLI 选项**，不能写在 `--` 后面（会被当成 cargo 参数）。改为 `pnpm tauri android build --apk --aab`，并同步修改 `release.config.json` 的 `mobile.androidBuildCommand` |
+| `release.mjs --platform android` | 未找到 Android 产物 | 先执行 `pnpm tauri android build`；产物在 `src-tauri/gen/android/app/build/outputs/` |
+| `tauri android build` | `cargo build ... --apk --aab` exited with code 1；cargo 提示 `unexpected argument '--apk'` | 旧版 `@tauri-apps/cli` 不识别 `--apk`/`--aab`，会当作 cargo 参数转发。**去掉这两个 flag**，用 `pnpm tauri android build` 即可（默认同时打 APK + AAB）；并改 `release.config.json` 的 `mobile.androidBuildCommand`。若仍失败，升级 CLI：`pnpm add -D @tauri-apps/cli@latest` |
 | 同上 `--platform ios` | 未找到 IPA | 需 macOS + Xcode；产物在 `src-tauri/gen/apple/build/arm64/*.ipa` |
 | 上传脚本 | `.apk` 未上传 | 旧版按版本号过滤文件名；现已对 `.apk`/`.aab`/`.ipa` 始终上传 |
 | 仅移动端发版 | 无 `latest.json` | 正常；移动端不走 Tauri updater，包直接挂在 Release 附件 |
