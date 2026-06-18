@@ -2,7 +2,7 @@
 /**
  * 根据 Tauri 构建产物生成 latest.json（Skill 内置，从项目根调用）。
  */
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 
 import { getAppDisplayName, loadReleaseConfigRaw } from './lib/load-release-config.mjs'
@@ -80,12 +80,42 @@ function toReleaseUrl(fileName) {
   return `${releaseBaseUrl}/${encodeURIComponent(fileName)}/download`
 }
 
-function detectMacPlatform(fileName) {
-  const lower = fileName.toLowerCase()
+function detectMacPlatformFromName(name) {
+  const lower = name.toLowerCase()
   if (lower.includes('aarch64') || lower.includes('arm64')) return 'darwin-aarch64'
   if (lower.includes('x64') || lower.includes('x86_64') || lower.includes('intel')) return 'darwin-x86_64'
   if (lower.includes('universal')) return 'darwin-universal'
   return null
+}
+
+function detectMacPlatformFromPath(filePath) {
+  const lower = filePath.toLowerCase()
+  if (lower.includes('aarch64-apple-darwin')) return 'darwin-aarch64'
+  if (lower.includes('x86_64-apple-darwin')) return 'darwin-x86_64'
+  return null
+}
+
+function detectMacPlatformFromBundleTree(bundlePath, bundleFiles) {
+  const bundleRoot = dirname(dirname(bundlePath))
+  for (const file of bundleFiles) {
+    if (!file.startsWith(bundleRoot)) continue
+    const hint = detectMacPlatformFromName(basename(file))
+    if (hint) return hint
+  }
+  return null
+}
+
+function detectMacPlatform(bundlePath, bundleFiles) {
+  return (
+    detectMacPlatformFromName(basename(bundlePath)) ||
+    detectMacPlatformFromPath(bundlePath) ||
+    detectMacPlatformFromBundleTree(bundlePath, bundleFiles) ||
+    (process.platform === 'darwin'
+      ? process.arch === 'arm64'
+        ? 'darwin-aarch64'
+        : 'darwin-x86_64'
+      : null)
+  )
 }
 
 /** @type {Record<string, { url: string, signature: string }>} */
@@ -98,7 +128,7 @@ for (const pair of findAllBundlePairs(bundleFiles, '.exe')) {
 }
 
 for (const pair of findAllBundlePairs(bundleFiles, '.app.tar.gz')) {
-  const platform = detectMacPlatform(pair.name)
+  const platform = detectMacPlatform(pair.bundle, bundleFiles)
   const entry = { url: toReleaseUrl(pair.name), signature: readSig(pair.sig) }
   if (platform === 'darwin-universal') {
     platforms['darwin-aarch64'] = entry
