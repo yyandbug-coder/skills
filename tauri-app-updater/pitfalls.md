@@ -44,6 +44,9 @@
 
 | 现象 | 原因 | 处理 |
 |------|------|------|
+| 构建/上传失败后版本仍停留在新版本 | 旧版 Skill 先 bump 再构建，失败时不会回退 | 升级 Skill 后失败会自动写回 bump 前版本；已 push/upload 成功则不会回退；本次可 `pnpm release:cli --set-version 0.1.7 --skip-build` 或手改三处版本文件 |
+| push 成功但 upload 失败 | 远程 tag 已含新版本 | 版本号不会自动回退（避免与远程不一致）；修复 upload 后重试 `--skip-bump --skip-build --upload` |
+| push 失败但本地已有 commit/tag | git commit/tag 在 push 前已创建 | 回退版本文件后需手动 `git tag -d` / `git reset` 清理本地 tag 与 commit |
 | 选了「保持当前版本」但 `package.json` 仍 patch +1 | `tauriBuildCommand` 配了 `pnpm tauri:deploy` 等一体脚本，Skill 跳过了自身 bump，但脚本末尾仍会 `bump-version.mjs` | 将 `tauriBuildCommand` 改为 `pnpm tauri build`；或确保 Skill 已透传 `--skip-bump`（v2025-06 起） |
 | `Info.plist` 从旧版变为与 `tauri.conf.json` 一致 | **不是 bump**：`src-tauri/gen/apple/**/Info.plist` 为生成文件，构建时会从 `tauri.conf.json` 同步版本 | 若源文件已是目标版本，可忽略；勿单独手改 gen 目录 |
 | `tauriBuildCommand` 用了项目 deploy 脚本 | deploy 默认构建+上传+bump 一条龙 | Skill 发版用 `desktop.defaultBuildCommand` / `mobile.*BuildCommand` 分平台构建 |

@@ -50,6 +50,15 @@ function shouldUseShell(command) {
   return ['pnpm', 'npm', 'npx', 'yarn'].includes(command)
 }
 
+class ReleaseStepError extends Error {
+  /** @param {number} exitCode */
+  constructor(exitCode) {
+    super(`release step failed with exit code ${exitCode}`)
+    this.name = 'ReleaseStepError'
+    this.exitCode = exitCode
+  }
+}
+
 function run(command, commandArgs, options = {}) {
   console.log(`\n[release] $ ${command} ${commandArgs.join(' ')}`)
   const result = spawnSync(command, commandArgs, {
@@ -59,7 +68,7 @@ function run(command, commandArgs, options = {}) {
     env: createBuildEnv(projectRoot, options.env ?? {}),
   })
   if (result.status !== 0) {
-    process.exit(result.status ?? 1)
+    throw new ReleaseStepError(result.status ?? 1)
   }
 }
 
@@ -94,22 +103,35 @@ if (!['patch', 'minor', 'major'].includes(partArg)) {
 
 const { bump, config: releaseConfigLoader } = await getTauriReleaseUtils(projectRoot)
 const releaseCfg = releaseConfigLoader.loadReleaseConfig(projectRoot)
+const releaseTargets = listConfiguredReleaseTargets(releaseConfigRaw)
+const primaryTarget = releaseTargets.includes('gitcode') ? 'gitcode' : releaseTargets[0] || 'gitcode'
+
+if ((shouldUpload || shouldPush) && releaseTargets.length === 0) {
+  console.error('[release] release.config.json 需配置 github 或 gitcode')
+  process.exit(1)
+}
 
 let version = await getProjectVersion(projectRoot)
 /** @type {string[]} */
 let versionFiles = []
+/** @type {string | null} */
+let versionBeforeRelease = null
+/** 远程已 push 或 upload 成功后不再回退版本号 */
+let versionLocked = false
 
 if (setVersion) {
   const result = await setProjectVersion(projectRoot, setVersion, { dryRun })
   console.log(`[release] 版本 ${result.from} → ${result.to}${dryRun ? '（dry-run）' : ''}`)
   version = result.to
   versionFiles = result.files
+  versionBeforeRelease = result.from
 } else if (tagFromEnv) {
   const tagVersion = tagFromEnv.replace(/^v/, '')
   const result = await setProjectVersion(projectRoot, tagVersion, { dryRun })
   console.log(`[release] 按 tag 同步版本 ${result.from} → ${result.to}${dryRun ? '（dry-run）' : ''}`)
   version = result.to
   versionFiles = result.files
+  versionBeforeRelease = result.from
 } else if (!skipBump) {
   const result = bump.bumpProjectVersion(projectRoot, { part: partArg, dryRun })
   console.log(`[release] 版本 ${result.from} → ${result.to}${dryRun ? '（dry-run）' : ''}`)
@@ -118,21 +140,15 @@ if (setVersion) {
   }
   version = result.to
   versionFiles = result.files
+  versionBeforeRelease = result.from
 } else {
   console.log(`[release] 跳过版本递增，当前版本 ${version}`)
 }
 
 const tagName = `v${version}`
-const releaseTargets = listConfiguredReleaseTargets(releaseConfigRaw)
-const primaryTarget = releaseTargets.includes('gitcode') ? 'gitcode' : releaseTargets[0] || 'gitcode'
 const releaseBaseUrl =
   process.env.RELEASE_BASE_URL ||
   (releaseTargets.length > 0 ? resolveReleaseBaseUrl(primaryTarget, releaseConfigRaw, version) : '')
-
-if ((shouldUpload || shouldPush) && releaseTargets.length === 0) {
-  console.error('[release] release.config.json 需配置 github 或 gitcode')
-  process.exit(1)
-}
 
 function resolveBuildCommands() {
   return describeBuildPlan(platformSelection, releaseCfg, releaseConfigRaw)
@@ -171,6 +187,22 @@ function toRepoRelativePath(absPath) {
   return relative(projectRoot, absPath).replace(/\\/g, '/')
 }
 
+async function rollbackVersionIfNeeded() {
+  if (dryRun || versionBeforeRelease === null || versionLocked) return
+  try {
+    const result = await setProjectVersion(projectRoot, versionBeforeRelease)
+    console.error(`\n[release] 发版失败，已回退版本 ${result.from} → ${result.to}`)
+    for (const file of result.files) {
+      console.error(`  已恢复：${file}`)
+    }
+  } catch (rollbackErr) {
+    console.error(
+      `\n[release] 发版失败，版本回退也失败：${rollbackErr instanceof Error ? rollbackErr.message : rollbackErr}`,
+    )
+    console.error(`  请手动将版本改回 ${versionBeforeRelease}`)
+  }
+}
+
 function gitPushRelease(tag, commitFiles) {
   const tagCheck = spawnSync('git', ['rev-parse', tag], {
     cwd: projectRoot,
@@ -179,7 +211,7 @@ function gitPushRelease(tag, commitFiles) {
   })
   if (tagCheck.status === 0) {
     console.error(`[release] tag ${tag} 已存在，请先删除或更换版本号`)
-    process.exit(1)
+    throw new ReleaseStepError(1)
   }
 
   const filesToAdd = [
@@ -206,124 +238,134 @@ function gitPushRelease(tag, commitFiles) {
   console.log(`\n[release] 已推送 ${tag} 到所有远程仓库`)
 }
 
-if (!skipBuild) {
-  if (hasDesktopBuild(platformSelection)) {
-    const signingKeyPath = createBuildEnv(projectRoot).TAURI_SIGNING_PRIVATE_KEY
-    if (!existsSync(signingKeyPath) && !String(signingKeyPath).includes('BEGIN')) {
-      console.warn(`[release] 警告：未找到签名私钥 ${signingKeyPath}，构建产物可能没有 .sig 文件`)
+try {
+  if (!skipBuild) {
+    if (hasDesktopBuild(platformSelection)) {
+      const signingKeyPath = createBuildEnv(projectRoot).TAURI_SIGNING_PRIVATE_KEY
+      if (!existsSync(signingKeyPath) && !String(signingKeyPath).includes('BEGIN')) {
+        console.warn(`[release] 警告：未找到签名私钥 ${signingKeyPath}，构建产物可能没有 .sig 文件`)
+      }
+    }
+
+    for (const command of resolveBuildCommandsForRun()) {
+      runBuildCommand(command, {
+        env: skipBump ? { TAURI_RELEASE_SKIP_BUMP: '1' } : {},
+      })
     }
   }
 
-  for (const command of resolveBuildCommandsForRun()) {
-    runBuildCommand(command, {
-      env: skipBump ? { TAURI_RELEASE_SKIP_BUMP: '1' } : {},
+  const artifactDir = join(projectRoot, 'releases/artifacts')
+  mkdirSync(artifactDir, { recursive: true })
+
+  if (hasDesktopBuild(platformSelection)) {
+    for (const file of collectDesktopBundleFilesFromRoots(bundleRoots, platformSelection)) {
+      cpSync(file, join(artifactDir, basename(file)), { force: true })
+    }
+  }
+
+  if (hasMobileBuild(platformSelection)) {
+    const mobileFiles = collectMobileArtifacts(projectRoot, releaseConfigRaw, {
+      android: platformSelection.android,
+      ios: platformSelection.ios,
     })
+    if (mobileFiles.length === 0) {
+      console.warn('[release] 未找到 Android/iOS 产物，请确认已执行 tauri android/ios build')
+    }
+    for (const file of mobileFiles) {
+      const destName = mobileArtifactDestName(file, appName, version)
+      cpSync(file, join(artifactDir, destName), { force: true })
+      console.log(`[release] 已收集移动端产物：${destName}`)
+    }
   }
-}
 
-const artifactDir = join(projectRoot, 'releases/artifacts')
-mkdirSync(artifactDir, { recursive: true })
+  const desktopArtifacts = hasDesktopBuild(platformSelection)
+    ? collectDesktopBundleFilesFromRoots(bundleRoots, platformSelection).filter(
+        (file) => !file.endsWith('.sig'),
+      )
+    : []
 
-if (hasDesktopBuild(platformSelection)) {
-  for (const file of collectDesktopBundleFilesFromRoots(bundleRoots, platformSelection)) {
-    cpSync(file, join(artifactDir, basename(file)), { force: true })
-  }
-}
+  if (desktopArtifacts.length > 0) {
+    run('node', [
+      join(skillScripts, 'generate-latest-json.mjs'),
+      '--version',
+      version,
+      '--notes',
+      notes,
+      '--bundle-root',
+      bundleRootArg,
+      '--target',
+      primaryTarget,
+    ], {
+      env: { RELEASE_BASE_URL: releaseBaseUrl, RELEASE_TARGET: primaryTarget },
+    })
 
-if (hasMobileBuild(platformSelection)) {
-  const mobileFiles = collectMobileArtifacts(projectRoot, releaseConfigRaw, {
-    android: platformSelection.android,
-    ios: platformSelection.ios,
-  })
-  if (mobileFiles.length === 0) {
-    console.warn('[release] 未找到 Android/iOS 产物，请确认已执行 tauri android/ios build')
-  }
-  for (const file of mobileFiles) {
-    const destName = mobileArtifactDestName(file, appName, version)
-    cpSync(file, join(artifactDir, destName), { force: true })
-    console.log(`[release] 已收集移动端产物：${destName}`)
-  }
-}
-
-const desktopArtifacts = hasDesktopBuild(platformSelection)
-  ? collectDesktopBundleFilesFromRoots(bundleRoots, platformSelection).filter(
-      (file) => !file.endsWith('.sig'),
+    cpSync(join(projectRoot, 'releases/latest.json'), join(artifactDir, 'latest.json'), { force: true })
+  } else if (hasDesktopBuild(platformSelection)) {
+    console.warn(
+      `[release] 未在以下目录找到桌面产物：${bundleRoots.map((root) => relative(projectRoot, root)).join(', ')}`,
     )
-  : []
-
-if (desktopArtifacts.length > 0) {
-  run('node', [
-    join(skillScripts, 'generate-latest-json.mjs'),
-    '--version',
-    version,
-    '--notes',
-    notes,
-    '--bundle-root',
-    bundleRootArg,
-    '--target',
-    primaryTarget,
-  ], {
-    env: { RELEASE_BASE_URL: releaseBaseUrl, RELEASE_TARGET: primaryTarget },
-  })
-
-  cpSync(join(projectRoot, 'releases/latest.json'), join(artifactDir, 'latest.json'), { force: true })
-} else if (hasDesktopBuild(platformSelection)) {
-  console.warn(
-    `[release] 未在以下目录找到桌面产物：${bundleRoots.map((root) => relative(projectRoot, root)).join(', ')}`,
-  )
-} else {
-  console.log('[release] 无桌面产物，跳过 latest.json（移动端包将直接上传到 Release）')
-}
-
-if (hasMobileBuild(platformSelection)) {
-  run('node', [join(skillScripts, 'generate-mobile-update-config.mjs')])
-}
-
-console.log(`\n[release] 发版平台：${platformSelectionLabel(platformSelection)}`)
-console.log('\n[release] 发版本地产物：')
-for (const file of readdirSync(artifactDir)) {
-  console.log(`  releases/artifacts/${file}`)
-}
-
-if (shouldPush) {
-  gitPushRelease(tagName, versionFiles)
-} else {
-  console.log(`\n[release] 下一步：`)
-  console.log(`  pnpm release:publish   # 或 pnpm release:cli --push --upload`)
-}
-
-if (shouldUpload) {
-  const hasGithubToken = Boolean(process.env.GITHUB_TOKEN || process.env.GH_TOKEN)
-  const hasGitcodeToken = Boolean(process.env.GITCODE_TOKEN)
-  const configuredNeedGithub = releaseTargets.includes('github')
-  const configuredNeedGitcode = releaseTargets.includes('gitcode')
-  const missingGithub = configuredNeedGithub && !hasGithubToken
-  const missingGitcode = configuredNeedGitcode && !hasGitcodeToken
-
-  if (missingGithub || missingGitcode) {
-    const missing = []
-    if (missingGithub) missing.push('GITHUB_TOKEN / GH_TOKEN')
-    if (missingGitcode) missing.push('GITCODE_TOKEN')
-    console.warn(`\n[release] 警告：缺少 ${missing.join('、')}，对应平台将在 upload 阶段跳过`)
+  } else {
+    console.log('[release] 无桌面产物，跳过 latest.json（移动端包将直接上传到 Release）')
   }
 
-  run('node', [
-    join(skillScripts, 'upload-release.mjs'),
-    '--tag',
-    tagName,
-    '--version',
-    version,
-    '--name',
-    `${appName} ${tagName}`,
-    '--body',
-    notes,
-    '--dir',
-    'releases/artifacts',
-    '--bundle-root',
-    bundleRootArg,
-    '--skip-json',
-  ])
-  console.log(`\n[release] 已上传到所有可用平台：${tagName}`)
-}
+  if (hasMobileBuild(platformSelection)) {
+    run('node', [join(skillScripts, 'generate-mobile-update-config.mjs')])
+  }
 
-console.log(`\n[release] 完成：${tagName}`)
+  console.log(`\n[release] 发版平台：${platformSelectionLabel(platformSelection)}`)
+  console.log('\n[release] 发版本地产物：')
+  for (const file of readdirSync(artifactDir)) {
+    console.log(`  releases/artifacts/${file}`)
+  }
+
+  if (shouldPush) {
+    gitPushRelease(tagName, versionFiles)
+    versionLocked = true
+  } else {
+    console.log(`\n[release] 下一步：`)
+    console.log(`  pnpm release:publish   # 或 pnpm release:cli --push --upload`)
+  }
+
+  if (shouldUpload) {
+    const hasGithubToken = Boolean(process.env.GITHUB_TOKEN || process.env.GH_TOKEN)
+    const hasGitcodeToken = Boolean(process.env.GITCODE_TOKEN)
+    const configuredNeedGithub = releaseTargets.includes('github')
+    const configuredNeedGitcode = releaseTargets.includes('gitcode')
+    const missingGithub = configuredNeedGithub && !hasGithubToken
+    const missingGitcode = configuredNeedGitcode && !hasGitcodeToken
+
+    if (missingGithub || missingGitcode) {
+      const missing = []
+      if (missingGithub) missing.push('GITHUB_TOKEN / GH_TOKEN')
+      if (missingGitcode) missing.push('GITCODE_TOKEN')
+      console.warn(`\n[release] 警告：缺少 ${missing.join('、')}，对应平台将在 upload 阶段跳过`)
+    }
+
+    run('node', [
+      join(skillScripts, 'upload-release.mjs'),
+      '--tag',
+      tagName,
+      '--version',
+      version,
+      '--name',
+      `${appName} ${tagName}`,
+      '--body',
+      notes,
+      '--dir',
+      'releases/artifacts',
+      '--bundle-root',
+      bundleRootArg,
+      '--skip-json',
+    ])
+    versionLocked = true
+    console.log(`\n[release] 已上传到所有可用平台：${tagName}`)
+  }
+
+  console.log(`\n[release] 完成：${tagName}`)
+} catch (err) {
+  if (!(err instanceof ReleaseStepError)) {
+    console.error(`\n[release] 意外错误：${err instanceof Error ? err.message : err}`)
+  }
+  await rollbackVersionIfNeeded()
+  process.exit(err instanceof ReleaseStepError ? err.exitCode : 1)
+}

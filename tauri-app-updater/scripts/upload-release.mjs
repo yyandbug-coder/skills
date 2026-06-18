@@ -73,6 +73,8 @@ if (targets.length === 0) {
   process.exit(1)
 }
 
+let uploadedCount = 0
+
 for (const target of targets) {
   const token =
     target === 'github'
@@ -115,6 +117,12 @@ for (const target of targets) {
     '--dir',
     assetsDir,
   ])
+  uploadedCount += 1
+}
+
+if (uploadedCount === 0) {
+  console.error('[upload-release] 未上传到任何平台（缺少 token 或未配置目标）')
+  process.exit(1)
 }
 
 console.log('\n[upload-release] 全部平台处理完成')
