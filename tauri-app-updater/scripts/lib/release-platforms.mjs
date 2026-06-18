@@ -253,7 +253,7 @@ export function resolveBuildCommands(selection, releaseCfg, releaseConfigRaw) {
     }
     if (wantsMobile) {
       if (selection.android) {
-        commands.push(mobileCfg.androidBuildCommand || 'pnpm tauri android build -- --apk --aab')
+        commands.push(mobileCfg.androidBuildCommand || 'pnpm tauri android build --apk --aab')
       }
       if (selection.ios) {
         commands.push(mobileCfg.iosBuildCommand || 'pnpm tauri ios build')
@@ -281,7 +281,7 @@ export function resolveBuildCommands(selection, releaseCfg, releaseConfigRaw) {
     )
   }
   if (selection.android) {
-    commands.push(mobileCfg.androidBuildCommand || 'pnpm tauri android build -- --apk --aab')
+    commands.push(mobileCfg.androidBuildCommand || 'pnpm tauri android build --apk --aab')
   }
   if (selection.ios) {
     commands.push(mobileCfg.iosBuildCommand || 'pnpm tauri ios build')
