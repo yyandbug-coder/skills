@@ -6,7 +6,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { getAppDisplayName, loadReleaseConfigRaw } from './lib/load-release-config.mjs'
+import { getAppDisplayName, loadReleaseConfigRaw, resolveReleaseArtifactRelDir } from './lib/load-release-config.mjs'
 import { shouldIncludeReleaseAsset } from './lib/release-artifacts.mjs'
 import { getProjectRoot } from './lib/skill-paths.mjs'
 
@@ -26,7 +26,14 @@ function readArg(name) {
 const tagName = readArg('--tag') || process.env.GITCODE_TAG
 const releaseName = readArg('--name') || `${appName} ${tagName}`
 const releaseBody = readArg('--body') || `Release ${tagName}`
-const assetsDir = join(projectRoot, readArg('--dir') || 'releases/artifacts')
+const releaseVersion = tagName?.replace(/^v/, '') ?? ''
+const assetsDir = join(
+  projectRoot,
+  readArg('--dir') ||
+    (releaseVersion
+      ? resolveReleaseArtifactRelDir(projectRoot, releaseConfig, releaseVersion)
+      : 'releases/artifacts'),
+)
 
 const token = process.env.GITCODE_TOKEN
 const owner = process.env.GITCODE_OWNER || gitcodeCfg.owner
@@ -45,7 +52,6 @@ function resolveDefaultBranch() {
 }
 
 const defaultBranch = resolveDefaultBranch()
-const releaseVersion = tagName?.replace(/^v/, '') ?? ''
 
 if (!token) {
   console.error('[gitcode-upload] 缺少环境变量 GITCODE_TOKEN')

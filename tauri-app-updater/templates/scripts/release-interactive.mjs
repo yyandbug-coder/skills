@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 
 import { importFromProject } from './lib/import-from-project.mjs'
-import { getAppDisplayName, loadReleaseConfigRaw } from './lib/load-release-config.mjs'
+import { getAppDisplayName, loadReleaseConfigRaw, resolveReleaseArtifactDir } from './lib/load-release-config.mjs'
 import { hasReleaseArtifacts } from './lib/release-artifacts.mjs'
 import {
   describeBuildPlan,
@@ -24,11 +24,14 @@ const p = await importFromProject(projectRoot, '@clack/prompts')
 const releaseConfigRaw = loadReleaseConfigRaw(projectRoot)
 const appName = getAppDisplayName(projectRoot, releaseConfigRaw)
 const currentVersion = await getProjectVersion(projectRoot)
-const artifactDir = join(projectRoot, 'releases/artifacts')
 const releaseScript = join(getSkillRoot(), 'scripts', 'release.mjs')
 
-function hasArtifacts() {
-  return hasReleaseArtifacts(artifactDir)
+function getArtifactDir(version = currentVersion) {
+  return resolveReleaseArtifactDir(projectRoot, releaseConfigRaw, version)
+}
+
+function hasArtifacts(version = currentVersion) {
+  return hasReleaseArtifacts(getArtifactDir(version))
 }
 
 function runRelease(args) {

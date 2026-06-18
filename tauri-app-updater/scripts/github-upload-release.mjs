@@ -6,7 +6,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { getAppDisplayName, loadReleaseConfigRaw } from './lib/load-release-config.mjs'
+import { getAppDisplayName, loadReleaseConfigRaw, resolveReleaseArtifactRelDir } from './lib/load-release-config.mjs'
 import { shouldIncludeReleaseAsset } from './lib/release-artifacts.mjs'
 import { getGithubConfig } from './lib/release-targets.mjs'
 import { getProjectRoot } from './lib/skill-paths.mjs'
@@ -27,11 +27,17 @@ function readArg(name) {
 const tagName = readArg('--tag') || process.env.GITHUB_TAG || process.env.GITCODE_TAG
 const releaseName = readArg('--name') || `${appName} ${tagName}`
 const releaseBody = readArg('--body') || `Release ${tagName}`
-const assetsDir = join(projectRoot, readArg('--dir') || 'releases/artifacts')
+const releaseVersion = tagName?.replace(/^v/, '') ?? ''
+const assetsDir = join(
+  projectRoot,
+  readArg('--dir') ||
+    (releaseVersion
+      ? resolveReleaseArtifactRelDir(projectRoot, releaseConfig, releaseVersion)
+      : 'releases/artifacts'),
+)
 
 const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN
 const { owner, repo, apiUrl, defaultBranch } = githubCfg
-const releaseVersion = tagName?.replace(/^v/, '') ?? ''
 
 if (!token) {
   console.error('[github-upload] 缺少环境变量 GITHUB_TOKEN 或 GH_TOKEN')

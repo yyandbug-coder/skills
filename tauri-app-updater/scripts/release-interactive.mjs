@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 
 import { importFromProject } from './lib/import-from-project.mjs'
-import { getAppDisplayName, loadReleaseConfigRaw } from './lib/load-release-config.mjs'
+import { getAppDisplayName, loadReleaseConfigRaw, resolveReleaseArtifactDir } from './lib/load-release-config.mjs'
 import { hasReleaseArtifacts } from './lib/release-artifacts.mjs'
 import {
   describeBuildPlan,
@@ -24,11 +24,14 @@ const p = await importFromProject(projectRoot, '@clack/prompts')
 const releaseConfigRaw = loadReleaseConfigRaw(projectRoot)
 const appName = getAppDisplayName(projectRoot, releaseConfigRaw)
 const currentVersion = await getProjectVersion(projectRoot)
-const artifactDir = join(projectRoot, 'releases/artifacts')
 const releaseScript = join(getSkillRoot(), 'scripts', 'release.mjs')
 
-function hasArtifacts() {
-  return hasReleaseArtifacts(artifactDir)
+function getArtifactDir(version = currentVersion) {
+  return resolveReleaseArtifactDir(projectRoot, releaseConfigRaw, version)
+}
+
+function hasArtifacts(version = currentVersion) {
+  return hasReleaseArtifacts(getArtifactDir(version))
 }
 
 function runRelease(args) {
@@ -60,7 +63,7 @@ async function main() {
       options: [
         { value: 'build', label: '仅打包', hint: '本地构建 + 生成 latest.json，不上传' },
         { value: 'build-upload', label: '打包并上传', hint: '构建后上传到 GitHub + GitCode Release' },
-        { value: 'upload-only', label: '仅上传已有产物', hint: '跳过构建，上传 releases/artifacts/' },
+        { value: 'upload-only', label: '仅上传已有产物', hint: '跳过构建，上传 releases/v{version}/' },
         { value: 'dry-run', label: '预览流程', hint: 'dry-run，不实际构建/上传' },
       ],
     }),
@@ -73,7 +76,7 @@ async function main() {
   if (action === 'upload-only') {
     releaseArgs.push('--skip-build')
     if (!hasArtifacts()) {
-      p.log.warn('releases/artifacts/ 为空或不存在，请先执行「仅打包」。')
+      p.log.warn(`releases/v${currentVersion}/ 为空或不存在，请先执行「仅打包」。`)
       const continueAnyway = cancelIfNeeded(
         await p.confirm({ message: '仍要继续上传吗？', initialValue: false }),
       )
@@ -219,7 +222,7 @@ async function main() {
       `推送 Git tag：${pushTag ? '是' : '否'}`,
       `说明：${String(notes).trim() || defaultNotes}`,
       '',
-      '产物目录：releases/artifacts/',
+      `产物目录：releases/v${targetVersion}/`,
       hasDesktopBuild(platformSelection) ? '更新清单：releases/latest.json' : '更新清单：跳过（无桌面产物）',
     ].join('\n'),
     '发版摘要',

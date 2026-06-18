@@ -14,8 +14,8 @@ const DESKTOP_TRIPLE_BUNDLE_DIRS = {
   linux: 'x86_64-unknown-linux-gnu/release/bundle',
 }
 
-export const DESKTOP_ARTIFACT_PATTERN = /\.(exe|msi|sig|tar\.gz|AppImage)$/i
-export const ARTIFACT_CHECK_PATTERN = /\.(exe|msi|sig|tar\.gz|AppImage|apk|aab|ipa|json)$/i
+export const DESKTOP_ARTIFACT_PATTERN = /\.(exe|msi|dmg|sig|tar\.gz|AppImage)$/i
+export const ARTIFACT_CHECK_PATTERN = /\.(exe|msi|dmg|sig|tar\.gz|AppImage|apk|aab|ipa|json)$/i
 
 const MOBILE_EXTENSIONS = new Set(['.apk', '.aab', '.ipa'])
 
@@ -34,6 +34,9 @@ export function isMobileArtifact(fileName) {
 export function shouldIncludeReleaseAsset(fileName, releaseVersion) {
   if (fileName === 'latest.json') return true
   if (isMobileArtifact(fileName)) return true
+  /** macOS updater 包通常不带版本号 */
+  if (/\.app\.tar\.gz$/i.test(fileName)) return true
+  if (/\.app\.tar\.gz\.sig$/i.test(fileName)) return true
   if (!releaseVersion) return true
   return fileName.includes(releaseVersion)
 }
@@ -167,10 +170,16 @@ function pickAabs(files) {
 }
 
 /**
+ * Tauri iOS 导出到 gen/apple/build/{arch}/*.ipa，路径不含 release。
  * @param {string[]} files
  */
 function pickIpas(files) {
-  return files.filter((file) => file.toLowerCase().endsWith('.ipa') && isReleaseBuildPath(file))
+  return files.filter((file) => {
+    const lower = file.toLowerCase()
+    if (!lower.endsWith('.ipa') || lower.includes('debug')) return false
+    if (lower.includes('gen/apple/build')) return true
+    return isReleaseBuildPath(file)
+  })
 }
 
 /**

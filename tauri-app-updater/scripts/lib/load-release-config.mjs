@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 
 /**
  * @param {string} projectRoot
@@ -65,4 +65,29 @@ export function getAppDisplayName(projectRoot, rawConfig) {
   } catch {
     return 'App'
   }
+}
+
+/**
+ * 解析本地产物目录（默认 releases/v{version}）。
+ * @param {string} projectRoot
+ * @param {Record<string, unknown>} [rawConfig]
+ * @param {string} version 不含 v 前缀
+ */
+export function resolveReleaseArtifactDir(projectRoot, rawConfig = {}, version) {
+  const base = typeof rawConfig.releaseDir === 'string' ? rawConfig.releaseDir : 'releases'
+  const layout = rawConfig.releaseArtifactLayout ?? 'versioned'
+  if (layout === 'flat') {
+    return join(projectRoot, base, 'artifacts')
+  }
+  const normalized = String(version).replace(/^v/, '')
+  return join(projectRoot, base, `v${normalized}`)
+}
+
+/**
+ * @param {string} projectRoot
+ * @param {Record<string, unknown>} [rawConfig]
+ * @param {string} version
+ */
+export function resolveReleaseArtifactRelDir(projectRoot, rawConfig = {}, version) {
+  return relative(projectRoot, resolveReleaseArtifactDir(projectRoot, rawConfig, version)).replace(/\\/g, '/')
 }

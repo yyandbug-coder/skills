@@ -162,6 +162,7 @@ export function allowsDesktopArtifact(fileName, selection) {
 
   if ((lower.endsWith('.exe') || lower.endsWith('.msi')) && kinds.has('windows')) return true
   if (lower.endsWith('.app.tar.gz') && kinds.has('macos')) return true
+  if (lower.endsWith('.dmg') && kinds.has('macos')) return true
   if (lower.endsWith('.appimage') && kinds.has('linux')) return true
 
   if (lower.endsWith('.sig')) {

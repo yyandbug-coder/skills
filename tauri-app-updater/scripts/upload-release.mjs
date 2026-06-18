@@ -6,7 +6,7 @@ import { cpSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { getAppDisplayName, loadReleaseConfigRaw } from './lib/load-release-config.mjs'
+import { getAppDisplayName, loadReleaseConfigRaw, resolveReleaseArtifactRelDir } from './lib/load-release-config.mjs'
 import { listConfiguredReleaseTargets } from './lib/release-targets.mjs'
 import { getProjectRoot, getSkillRoot } from './lib/skill-paths.mjs'
 
@@ -42,12 +42,13 @@ function runNode(scriptName, scriptArgs, extraEnv = {}) {
 const tagName = readArg('--tag') || process.env.GITCODE_TAG || process.env.GITHUB_TAG
 const releaseName = readArg('--name') || `${appName} ${tagName}`
 const releaseBody = readArg('--body') || `Release ${tagName}`
-const assetsDir = readArg('--dir') || 'releases/artifacts'
 const version = readArg('--version') || tagName?.replace(/^v/, '')
 const notes = readArg('--notes') || releaseBody
 const bundleRoot = readArg('--bundle-root') || join(projectRoot, 'src-tauri/target/release/bundle')
 const onlyTarget = readArg('--target')
 const skipJson = hasFlag('--skip-json')
+const assetsDir =
+  readArg('--dir') || (version ? resolveReleaseArtifactRelDir(projectRoot, releaseConfig, version) : 'releases/artifacts')
 
 if (!tagName) {
   console.error('[upload-release] 缺少 --tag')

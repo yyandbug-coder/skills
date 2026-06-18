@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readdirSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 
-import { createBuildEnv, getAppDisplayName, loadReleaseConfigRaw } from './lib/load-release-config.mjs'
+import { createBuildEnv, getAppDisplayName, loadReleaseConfigRaw, resolveReleaseArtifactDir, resolveReleaseArtifactRelDir } from './lib/load-release-config.mjs'
 import {
   collectDesktopBundleFilesFromRoots,
   collectMobileArtifacts,
@@ -254,8 +254,9 @@ try {
     }
   }
 
-  const artifactDir = join(projectRoot, 'releases/artifacts')
+  const artifactDir = resolveReleaseArtifactDir(projectRoot, releaseConfigRaw, version)
   mkdirSync(artifactDir, { recursive: true })
+  const artifactRelDir = resolveReleaseArtifactRelDir(projectRoot, releaseConfigRaw, version)
 
   if (hasDesktopBuild(platformSelection)) {
     for (const file of collectDesktopBundleFilesFromRoots(bundleRoots, platformSelection)) {
@@ -315,7 +316,7 @@ try {
   console.log(`\n[release] 发版平台：${platformSelectionLabel(platformSelection)}`)
   console.log('\n[release] 发版本地产物：')
   for (const file of readdirSync(artifactDir)) {
-    console.log(`  releases/artifacts/${file}`)
+    console.log(`  ${artifactRelDir}/${file}`)
   }
 
   if (shouldPush) {
@@ -352,7 +353,7 @@ try {
       '--body',
       notes,
       '--dir',
-      'releases/artifacts',
+      artifactRelDir,
       '--bundle-root',
       bundleRootArg,
       '--skip-json',
