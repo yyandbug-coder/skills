@@ -40,6 +40,12 @@
 | 同上 | 始终提示已是最新 | 确认 `release.config.json` 的 `mobile.update` 与 Release 中 latest.json / tag 一致 |
 | 仅移动端发版 | `latest.json` 不存在导致检查失败 | 将 `mobile.update.versionSource` 改为 `release-api` |
 
+## 发版脚本
+
+| 现象 | 原因 | 处理 |
+|------|------|------|
+| `readPlatformArgs is not defined` | 项目内 `.cursor/skills/tauri-app-updater`（或 `.agents/skills/`）为**旧版 Skill**，`release.mjs` 调用了 `readPlatformArgs` 但未 import；`updater-skill.mjs` **优先使用项目内副本**，会挡住已更新的全局 Skill | 删除项目内旧目录后重装：`Remove-Item -Recurse -Force .cursor\skills\tauri-app-updater`，再 `npx skills add yyandbug-coder/skills --skill tauri-app-updater -g -y`；或手动把全局 `~/.agents/skills/tauri-app-updater/scripts/` 同步到项目内 |
+
 ## 版本号与 `--skip-bump`
 
 | 现象 | 原因 | 处理 |
