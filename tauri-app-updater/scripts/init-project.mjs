@@ -47,7 +47,7 @@ const defaultConfig = {
     defaultBranch: 'master',
   },
   mobile: {
-    androidBuildCommand: 'pnpm tauri android build',
+    androidBuildCommand: 'pnpm tauri android build --target aarch64 --apk --aab',
     iosBuildCommand: 'pnpm tauri ios build',
     artifactDirs: [],
     update: {
@@ -107,8 +107,9 @@ function runGenerateMobileConfig() {
 }
 
 mkdirSync(join(projectRoot, 'scripts'), { recursive: true })
+// Always UTF-8; wrapper template is ASCII-only for Windows Node parse safety.
 writeFileSync(wrapperPath, readFileSync(wrapperTemplate, 'utf8'), 'utf8')
-console.log(`[init] 已写入 ${wrapperPath}`)
+console.log(`[init] wrote ${wrapperPath}`)
 
 if (!existsSync(configPath)) {
   writeFileSync(configPath, `${JSON.stringify(defaultConfig, null, 2)}\n`, 'utf8')

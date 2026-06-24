@@ -104,7 +104,7 @@ pnpm install
     "defaultBranch": "master"
   },
   "mobile": {
-    "androidBuildCommand": "pnpm tauri android build",
+    "androidBuildCommand": "pnpm tauri android build --target aarch64 --apk --aab",
     "iosBuildCommand": "pnpm tauri ios build",
     "artifactDirs": [],
     "update": {
@@ -135,7 +135,7 @@ pnpm install
 
 | 字段 | 说明 |
 |------|------|
-| `androidBuildCommand` | Android 构建命令，默认 `pnpm tauri android build`（默认即同时生成 APK + AAB；勿加 `--apk`/`--aab`，旧版 CLI 会把它们误传给 cargo） |
+| `androidBuildCommand` | Android 构建命令，默认 `pnpm tauri android build --target aarch64 --apk --aab`。CLI 2.11+ 的 `--apk`/`--aab` 是 Tauri 子命令参数，**禁止**写在 `--` 之后（否则会误传给 cargo 并报 `unexpected argument '--apk'`） |
 | `iosBuildCommand` | iOS 构建命令，默认 `pnpm tauri ios build` |
 | `artifactDirs` | 额外搜索 `.apk` / `.aab` / `.ipa` 的目录（相对项目根或绝对路径） |
 
@@ -150,14 +150,16 @@ pnpm install
 
 | 平台 | 说明 |
 |------|------|
-| `desktop` | 桌面默认构建（`tauriBuildCommand`，当前主机） |
+| `desktop` | 桌面默认构建（`tauriBuildCommand`，当前主机）；产物在 `target/release/bundle/`。**本机默认 build + 移动端请优先选此项**，勿只选 `macos` |
 | `windows` | Windows x86_64 |
-| `macos` | macOS aarch64 |
+| `macos` | macOS aarch64 **交叉编译**（`aarch64-apple-darwin/release/bundle`）；本机 `pnpm tauri build` 未指定 target 时**不要**只选此项 |
 | `linux` | Linux x86_64 |
 | `android` | Android APK + AAB |
 | `ios` | iOS IPA |
 | `mobile` | 简写：`android` + `ios` |
 | `all` | 简写：`desktop` + `android` + `ios` |
+
+> **本机发版 macOS + iOS**：向导中勾选 **`desktop` + `ios`**，不要只勾 `macos` + `ios`，否则 `.app.tar.gz` 可能未收集进 `releases/v{version}/`，导致 updater 下载 HTTP 500。详见 [pitfalls.md — 发版注意事项](pitfalls.md#发版注意事项checklist)。
 
 ```bash
 # 仅 Windows + Android

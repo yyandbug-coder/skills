@@ -84,7 +84,7 @@ const shouldPublish = hasFlag('--publish')
 const shouldPush = hasFlag('--push') || shouldPublish
 const shouldUpload = hasFlag('--upload') || shouldPublish
 const partArg = readArg('--part') || process.env.TAURI_DMG_VERSION_BUMP_PART || 'patch'
-const notes = readArg('--notes') || `${appName} release`
+const notesArg = readArg('--notes')
 const setVersion = readArg('--set-version')
 const tagFromEnv = process.env.GITCODE_TAG || readArg('--tag')
 
@@ -144,6 +144,8 @@ if (setVersion) {
 } else {
   console.log(`[release] 跳过版本递增，当前版本 ${version}`)
 }
+
+const notes = notesArg || `${appName} release v${version}`
 
 const tagName = `v${version}`
 const releaseBaseUrl =

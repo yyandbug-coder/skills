@@ -18,3 +18,7 @@ pnpm install
 ```
 
 详见 [SKILL.md](./SKILL.md)、[reference.md](./reference.md)。
+
+## Windows 说明
+
+若 `pnpm release` 报 `SyntaxError` 且指向 `scripts/updater-skill.mjs` 中文乱码，请在项目根目录重新执行 `init-project.mjs` 以覆盖 wrapper（见 [pitfalls.md](./pitfalls.md#windows-发版脚本)）。

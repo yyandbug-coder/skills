@@ -22,7 +22,7 @@ function readArg(name) {
 }
 
 const version = readArg('--version') || tauriConfig.version
-const notes = readArg('--notes') || `${appName} ${version}`
+const notes = readArg('--notes') || `${appName} release v${version}`
 
 function readBundleRoots() {
   /** @type {string[]} */

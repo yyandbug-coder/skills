@@ -24,10 +24,12 @@ import {
 } from './lib/release-platforms.mjs'
 import { listConfiguredReleaseTargets, resolveReleaseBaseUrl } from './lib/release-targets.mjs'
 import { getProjectVersion, getTauriReleaseUtils, setProjectVersion } from './lib/project-version.mjs'
+import { resolveNodeExecutable } from './lib/node-bin.mjs'
 import { getProjectRoot, getSkillRoot } from './lib/skill-paths.mjs'
 import { splitShellCommand } from './lib/shell-command.mjs'
 
 const projectRoot = getProjectRoot()
+const nodeBin = resolveNodeExecutable()
 const skillScripts = join(getSkillRoot(), 'scripts')
 const releaseConfigRaw = loadReleaseConfigRaw(projectRoot)
 const signingCfg = releaseConfigRaw.signing ?? {}
@@ -84,7 +86,7 @@ const shouldPublish = hasFlag('--publish')
 const shouldPush = hasFlag('--push') || shouldPublish
 const shouldUpload = hasFlag('--upload') || shouldPublish
 const partArg = readArg('--part') || process.env.TAURI_DMG_VERSION_BUMP_PART || 'patch'
-const notes = readArg('--notes') || `${appName} release`
+const notesArg = readArg('--notes')
 const setVersion = readArg('--set-version')
 const tagFromEnv = process.env.GITCODE_TAG || readArg('--tag')
 
@@ -144,6 +146,8 @@ if (setVersion) {
 } else {
   console.log(`[release] 跳过版本递增，当前版本 ${version}`)
 }
+
+const notes = notesArg || `${appName} release v${version}`
 
 const tagName = `v${version}`
 const releaseBaseUrl =
@@ -234,7 +238,7 @@ function gitPushRelease(tag, commitFiles) {
   }
 
   run('git', ['tag', tag])
-  run('node', [join(skillScripts, 'git-push-all.mjs'), '--tag', tag])
+  run(nodeBin, [join(skillScripts, 'git-push-all.mjs'), '--tag', tag])
   console.log(`\n[release] 已推送 ${tag} 到所有远程仓库`)
 }
 
@@ -286,7 +290,7 @@ try {
     : []
 
   if (desktopArtifacts.length > 0) {
-    run('node', [
+    run(nodeBin, [
       join(skillScripts, 'generate-latest-json.mjs'),
       '--version',
       version,
@@ -310,7 +314,7 @@ try {
   }
 
   if (hasMobileBuild(platformSelection)) {
-    run('node', [join(skillScripts, 'generate-mobile-update-config.mjs')])
+    run(nodeBin, [join(skillScripts, 'generate-mobile-update-config.mjs')])
   }
 
   console.log(`\n[release] 发版平台：${platformSelectionLabel(platformSelection)}`)
@@ -342,7 +346,7 @@ try {
       console.warn(`\n[release] 警告：缺少 ${missing.join('、')}，对应平台将在 upload 阶段跳过`)
     }
 
-    run('node', [
+    run(nodeBin, [
       join(skillScripts, 'upload-release.mjs'),
       '--tag',
       tagName,

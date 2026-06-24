@@ -11,7 +11,7 @@ export async function importFromProject(projectRoot, packageName) {
   const entry = resolvePackageEntry(projectRoot, packageName)
   if (!entry) {
     throw new Error(
-      `[tauri-app-updater] 缺少依赖 ${packageName}，请在项目根目录执行：pnpm install`,
+      `[tauri-app-updater] missing dependency ${packageName} — run pnpm install in the project root`,
     )
   }
   return import(pathToFileURL(entry).href)

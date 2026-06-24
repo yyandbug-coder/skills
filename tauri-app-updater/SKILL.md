@@ -55,6 +55,8 @@ pnpm release:cli --platform all --part patch --upload
 
 交互式向导中**空格多选**发版平台。
 
+**发版前必读**：[pitfalls.md — 发版注意事项（Checklist）](pitfalls.md#发版注意事项checklist)（平台选择、`macOS .app.tar.gz` 必传、上传前 curl 自检等）。
+
 ## 移动端更新（跳转 Release）
 
 移动端不走 `tauri-plugin-updater`，改为检查版本后打开 GitCode / GitHub Release 页：

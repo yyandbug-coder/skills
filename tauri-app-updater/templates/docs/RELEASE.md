@@ -128,7 +128,7 @@ $env:GITCODE_TOKEN = "你的Token"
 │  0.1.3
 │
 ◇  更新说明（Release notes）
-│  Kitty Tools release
+│  Kitty Tools release v0.1.3
 │
 ◇  确认开始执行？
 │  ● 是
@@ -144,6 +144,48 @@ $env:GITCODE_TOKEN = "你的Token"
 | 打包并上传 | ✅ | ✅ | 正式发布给用户 |
 | 仅上传已有产物 | ❌ | ✅ | 已 build 过，只补传 |
 | 预览流程 | ❌ | ❌ | 查看将执行什么，不实际运行 |
+
+---
+
+## 发版注意事项
+
+### 平台选择（交互式向导）
+
+| 场景 | 推荐勾选 |
+|------|----------|
+| 本机 `pnpm tauri build` + iOS | **`desktop` + `ios`** |
+| 本机默认构建 + Android | **`desktop` + `android`** |
+
+**不要**在本机默认 build 时只选 **`macos` + `ios`**：Skill 会从 `aarch64-apple-darwin/release/bundle/` 找产物，而本机构建通常在 `target/release/bundle/`，会导致 **`.app.tar.gz` 未进 `releases/v{version}/`**，客户端检查更新成功但下载 **HTTP 500**。
+
+### macOS：必须上传 updater 包
+
+| 文件 | 用途 |
+|------|------|
+| `{AppName}.app.tar.gz` | **应用内自动更新**（必传） |
+| `{AppName}_{version}_aarch64.dmg` | Release 页手动下载（建议传） |
+
+发版后打开 `releases/v{version}/`，确认含 `.app.tar.gz`，不能只有 `.dmg`。
+
+### Android 构建
+
+```bash
+# ✅ 正确（CLI 2.11+）
+pnpm tauri android build --target aarch64 --apk --aab
+
+# ❌ --apk/--aab 写在 -- 之后会报 cargo unexpected argument '--apk'
+pnpm tauri android build --target aarch64 -- --apk --aab
+```
+
+### 上传前自检
+
+```bash
+curl -sL "<latest.json URL>"
+curl -sL -o /dev/null -w "%{http_code}\n" "<platforms 里某平台的 url>"
+# 应返回 200 或 302，勿 500/404
+```
+
+更完整清单见 Skill 仓库 [pitfalls.md — 发版注意事项](https://github.com/yyandbug-coder/skills/blob/main/tauri-app-updater/pitfalls.md#发版注意事项checklist)。
 
 ---
 
@@ -266,7 +308,7 @@ https://api.gitcode.com/api/v5/repos/yyandbug/kitty-tools/releases/latest/attach
 
 重发前请先到 GitCode Release 页面：
 
-1. 删除旧的 `.exe`、`.msi`、`.sig`、`latest.json`
+1. 删除旧的 `.exe`、`.msi`、**`.app.tar.gz`**、`.sig`、`latest.json`
 2. 或删除整个 Release 后重新上传
 
 然后再执行：
@@ -286,7 +328,11 @@ pnpm create:release
 curl -sL "https://api.gitcode.com/api/v5/repos/yyandbug/kitty-tools/releases/latest/attach_files/latest.json/download"
 ```
 
-确认 `version` 与 `platforms.windows-x86_64.url` 正确。
+确认 `version` 与 `platforms.*.url` 正确；macOS 须能下载 `.app.tar.gz`（非仅 `.dmg`）。
+
+```bash
+curl -sL -o /dev/null -w "%{http_code}\n" "<latest.json 中 darwin-aarch64.url>"
+```
 
 ### 2. 应用内验证
 
@@ -320,6 +366,14 @@ $env:GITCODE_TOKEN = "你的Token"
 ### Q: 下载更新报 `error sending request for url`？
 
 确保上传的是包含更新下载修复的新构建包，且 GitCode 上的 `latest.json` 与安装包已更新。
+
+### Q: 能检测到新版本，下载报 HTTP 500？
+
+多为 Release **未上传** `latest.json` 里指向的文件（常见于 macOS 漏传 `.app.tar.gz`）。检查 GitCode 附件与 `releases/v{version}/` 是否一致，补传后重试。
+
+### Q: Windows 打包 Android 报 `unexpected argument '--apk'`？
+
+`release.config.json` 中 `mobile.androidBuildCommand` 勿写 `-- --apk --aab`；改为 `pnpm tauri android build --target aarch64 --apk --aab`。
 
 ---
 

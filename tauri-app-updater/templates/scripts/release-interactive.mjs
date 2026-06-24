@@ -158,7 +158,7 @@ async function main() {
 
   releaseArgs.push('--platform', selectedPlatforms.join(','))
 
-  const defaultNotes = action === 'upload-only' ? `${appName} ${targetVersion}` : `${appName} release`
+  const defaultNotes = `${appName} release v${targetVersion}`
   const notes = cancelIfNeeded(
     await p.text({
       message: '更新说明（Release notes）',

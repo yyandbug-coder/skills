@@ -52,11 +52,11 @@ export function parseShellCommand(command) {
   }
 
   if (quote) {
-    throw new Error(`[shell-command] 未闭合的引号：${command}`)
+    throw new Error(`[shell-command] unclosed quote in command: ${command}`)
   }
   if (current) args.push(current)
   if (args.length === 0) {
-    throw new Error(`[shell-command] 空命令：${command}`)
+    throw new Error(`[shell-command] empty command: ${command}`)
   }
 
   return args

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * 薄封装：将发版命令转发到 tauri-app-updater Skill。
- * 兼容 npx skills 安装路径（~/.agents/skills）与项目内路径。
+ * Thin wrapper: forwards release commands to tauri-app-updater Skill.
+ * Resolves skill from project paths first, then global install paths.
+ * (ASCII-only source: avoids Windows encoding parse errors in .mjs files.)
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -10,7 +11,7 @@ import { join } from 'node:path'
 
 const skillScript = process.argv[2]
 if (!skillScript) {
-  console.error('[updater-skill] 缺少 skill 脚本名')
+  console.error('[updater-skill] missing skill script name (e.g. release-interactive.mjs)')
   process.exit(1)
 }
 
@@ -32,11 +33,12 @@ function findSkillRoot() {
 
 const skillRoot = findSkillRoot()
 if (!skillRoot) {
-  console.error('[updater-skill] 未找到 tauri-app-updater skill\n')
-  console.error('  安装（每台电脑一次）：')
+  console.error('[updater-skill] tauri-app-updater skill not found\n')
+  console.error('  Install once per machine:')
   console.error('    npx skills add yyandbug-coder/skills --skill tauri-app-updater -g -y')
-  console.error('\n  接入项目（每个项目一次）：')
-  console.error('    node ~/.agents/skills/tauri-app-updater/scripts/init-project.mjs')
+  console.error('\n  Wire project once:')
+  console.error('    node skills/tauri-app-updater/scripts/init-project.mjs')
+  console.error('    (or: node %USERPROFILE%\\.agents\\skills\\tauri-app-updater\\scripts\\init-project.mjs)')
   process.exit(1)
 }
 

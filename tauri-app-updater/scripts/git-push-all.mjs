@@ -42,7 +42,7 @@ if (hasRemote('origin')) remotes.push('origin')
 if (hasRemote('gitcode')) remotes.push('gitcode')
 
 if (remotes.length === 0) {
-  console.error('[git-push-all] 未找到 origin 或 gitcode 远程')
+  console.error('[git-push-all] no origin or gitcode remote configured')
   process.exit(1)
 }
 

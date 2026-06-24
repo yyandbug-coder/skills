@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join, relative } from 'node:path'
+
+import { resolveHomeDir } from './home-dir.mjs'
 
 /**
  * @param {string} projectRoot
@@ -9,7 +10,7 @@ export function loadReleaseConfigRaw(projectRoot) {
   const configPath = join(projectRoot, 'release.config.json')
   if (!existsSync(configPath)) {
     throw new Error(
-      `[tauri-app-updater] 缺少 release.config.json。请先运行：node "${join(homedir(), '.cursor/skills/tauri-app-updater/scripts/init-project.mjs')}"`,
+      '[tauri-app-updater] missing release.config.json — run init-project.mjs from the Tauri project root',
     )
   }
   return JSON.parse(readFileSync(configPath, 'utf-8'))
@@ -27,14 +28,12 @@ export function resolveSigningPrivateKeyPath(projectRoot, signingCfg = {}) {
   const configured = signingCfg.privateKeyPath
   if (configured) {
     if (configured.startsWith('~')) {
-      const home = process.env.USERPROFILE || process.env.HOME || ''
-      return join(home, configured.slice(2).replace(/^[\\/]/, ''))
+      return join(resolveHomeDir(), configured.slice(2).replace(/^[\\/]/, ''))
     }
     return join(projectRoot, configured)
   }
 
-  const home = process.env.USERPROFILE || process.env.HOME || ''
-  return join(home, '.tauri', 'app.key')
+  return join(resolveHomeDir(), '.tauri', 'app.key')
 }
 
 /**

@@ -17,9 +17,12 @@ import {
 } from './lib/release-platforms.mjs'
 import { getProjectVersion } from './lib/project-version.mjs'
 import { getProjectRoot, getSkillRoot } from './lib/skill-paths.mjs'
+import { resolveNodeExecutable } from './lib/node-bin.mjs'
+import { safeClearConsole } from './lib/terminal.mjs'
 import { listConfiguredReleaseTargets } from './lib/release-targets.mjs'
 
 const projectRoot = getProjectRoot()
+const nodeBin = resolveNodeExecutable()
 const p = await importFromProject(projectRoot, '@clack/prompts')
 const releaseConfigRaw = loadReleaseConfigRaw(projectRoot)
 const appName = getAppDisplayName(projectRoot, releaseConfigRaw)
@@ -36,7 +39,7 @@ function hasArtifacts(version = currentVersion) {
 
 function runRelease(args) {
   p.log.step(`执行：node ${releaseScript} ${args.join(' ')}`)
-  const result = spawnSync('node', [releaseScript, ...args], {
+  const result = spawnSync(nodeBin, [releaseScript, ...args], {
     cwd: projectRoot,
     stdio: 'inherit',
     shell: false,
@@ -54,7 +57,7 @@ function cancelIfNeeded(value) {
 }
 
 async function main() {
-  console.clear()
+  safeClearConsole()
   p.intro(`${appName} 发版向导`)
 
   const action = cancelIfNeeded(
@@ -158,7 +161,7 @@ async function main() {
 
   releaseArgs.push('--platform', selectedPlatforms.join(','))
 
-  const defaultNotes = action === 'upload-only' ? `${appName} ${targetVersion}` : `${appName} release`
+  const defaultNotes = `${appName} release v${targetVersion}`
   const notes = cancelIfNeeded(
     await p.text({
       message: '更新说明（Release notes）',

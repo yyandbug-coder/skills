@@ -1,0 +1,7 @@
+# Keep JS/MJS UTF-8 + LF on all platforms (prevents Windows parse/encoding issues).
+*.mjs text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.json text eol=lf
+*.md text eol=lf
