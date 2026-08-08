@@ -1,5 +1,6 @@
 {
   "appName": "Your App",
+  "primaryTarget": "",
   "signing": {
     "privateKeyPath": ".secrets/app.key",
     "privateKeyPassword": ""
@@ -21,8 +22,10 @@
     "apiUrl": "https://api.gitcode.com/api/v5",
     "defaultBranch": "master"
   },
-  "_custom_自建服务器示例_删掉下划线前缀即可启用": {
-    "baseUrl": "https://dl.example.com/releases/{tag}",
-    "uploadCommand": "rsync -av --delete {dir}/ deploy@host:/var/www/releases/{tag}/"
+  "custom": {
+    "label": "自建服务器",
+    "baseUrl": "",
+    "endpoint": "",
+    "uploadCommand": ""
   }
 }

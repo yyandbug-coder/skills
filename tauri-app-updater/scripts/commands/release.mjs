@@ -20,7 +20,7 @@ import { auditManifest, buildManifest, collectUpdaterEntries, writeManifest } fr
 import { createSigningEnv, readConfiguredPubkey, verifySignatureKeys } from '../lib/signing.mjs'
 import { commitAndTag, pushAll } from '../lib/git.mjs'
 import { interpolate, resolveNotesFromProject, runProjectChecks } from '../lib/notes.mjs'
-import { listTargets, pickPrimaryTarget, tagFor } from '../lib/targets.mjs'
+import { assertHasTarget, listTargets, NO_TARGET_HINTS, pickPrimaryTarget, tagFor } from '../lib/targets.mjs'
 import { tauriCommand } from '../lib/package-manager.mjs'
 import { printReport } from '../lib/report.mjs'
 import { runCommand } from '../lib/shell.mjs'
@@ -47,6 +47,10 @@ export async function releaseCommand({ config, args }) {
     if (!plan.skipDoctor) {
       printReport(await assertHealthy(config), '发版前体检')
     }
+
+    // 要上传就必须有目标——**在构建之前**拦下来。等构建完两小时才发现没配，
+    // 是最没必要的一种失败。只本地构建则不需要目标。
+    if (plan.upload) assertHasTarget(config)
 
     // 版本号先定下来，changelog 校验才知道该查哪一版。
     if (plan.targetVersion !== plan.currentVersion) {
@@ -285,6 +289,15 @@ function writeManifests({ config, plan, builds, notes, artifactDir }) {
   }
 
   const targets = selectTargets(config, plan)
+  if (targets.length === 0) {
+    // 没有目标就推不出下载 URL，manifest 无从生成——但**产物和签名是完整的**，
+    // 这正是「先本地构建，以后再决定放哪」的合理状态，不该当成失败。
+    log.warn('未配置发版目标，跳过 latest.json 生成')
+    for (const hint of NO_TARGET_HINTS) log.detail(hint)
+    log.detail(`配好之后补生成：cli.mjs manifest --version ${plan.targetVersion}`)
+    return []
+  }
+
   const pubDate = new Date().toISOString()
   const manifestRoot = join(artifactDir, MANIFEST_DIR)
   rmSync(manifestRoot, { recursive: true, force: true })
@@ -323,7 +336,7 @@ function writeManifests({ config, plan, builds, notes, artifactDir }) {
  */
 function selectTargets(config, plan) {
   const all = listTargets(config)
-  if (all.length === 0) throw new ReleaseError('release.config.json 未配置 github / gitcode')
+  if (all.length === 0) return []
   if (plan.onlyTargets.length === 0) return all
 
   const picked = all.filter((target) => plan.onlyTargets.includes(target.name))
@@ -382,7 +395,12 @@ function printPlan(config, plan) {
     log.detail(`构建：${buildCommandFor(config, platform)}`)
   }
   log.detail(`产物：${config.releaseDir}/v${plan.targetVersion}/`)
-  log.detail(`manifest：逐目标生成（${selectTargets(config, plan).map((target) => target.label).join('、')}）`)
+  const targets = selectTargets(config, plan)
+  log.detail(
+    targets.length > 0
+      ? `manifest：逐目标生成（${targets.map((target) => target.label).join('、')}）`
+      : 'manifest：跳过（未配置发版目标）',
+  )
   log.detail(`git：${plan.push ? `commit + tag v${plan.targetVersion} + push 全部远程` : '不动'}`)
   log.detail(`上传：${plan.upload ? '是' : '否'}`)
   log.detail(`线上自检：${plan.upload && !plan.skipVerify ? '是' : '否'}`)

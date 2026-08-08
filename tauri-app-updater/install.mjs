@@ -197,7 +197,15 @@ try {
 
   clearDestination()
   const linked = useLink && installByLink(source)
-  if (!linked) installByCopy(source)
+  if (!linked) {
+    installByCopy(source)
+    // 从本地检出复制安装时，之后改检出是**不会生效**的——安装目录是一份快照。
+    // 一边开发 Skill 一边用它发版的人最容易栽在这：改了半天没反应，还以为代码有问题。
+    if (checkout) {
+      console.warn('[install] 注意：这是一份拷贝，之后修改检出不会自动生效')
+      console.warn('[install] 开发 Skill 本身请改用：node install.mjs --link')
+    }
+  }
   verify()
 } finally {
   cleanup()

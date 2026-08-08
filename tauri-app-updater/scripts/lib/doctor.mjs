@@ -11,7 +11,13 @@
 import { existsSync } from 'node:fs'
 
 import { readJson, toRelative } from './project.mjs'
-import { latestJsonEndpoint, listTargets, missingTokenHint } from './targets.mjs'
+import {
+  latestJsonEndpoint,
+  listTargets,
+  missingTokenHint,
+  NO_TARGET_HINTS,
+  NO_TARGET_MESSAGE,
+} from './targets.mjs'
 import { readConfiguredPubkey, readSiblingPubkey, resolveSigningKey } from './signing.mjs'
 import { probe, requestJson } from './http.mjs'
 import { isGitRepo } from './git.mjs'
@@ -70,11 +76,24 @@ function checkTauriConfig(config) {
   }
 
   if (problems.length > 0) {
+    // endpoints 是从发版目标推出来的：目标都没配的时候说「doctor --fix 能补」是骗人的。
+    // 而且此时 endpoints 为空不该判红——本地构建用不到它，配了目标自然就有了。
+    const noTargets = listTargets(config).length === 0
+    const onlyEndpoints = problems.length === 1 && problems[0].includes('endpoints')
+    if (noTargets && onlyEndpoints) {
+      return {
+        name: 'tauri.conf.json',
+        status: 'warn',
+        message: 'endpoints 为空——配好发版目标后 doctor --fix 会自动填',
+      }
+    }
     return {
       name: 'tauri.conf.json',
       status: 'fail',
       message: problems.join('；'),
-      hints: ['这几项都能自动补：doctor --fix'],
+      hints: noTargets
+        ? ['endpoints 要先配好发版目标才推得出来（见下一条）', '其余项 doctor --fix 可自动补']
+        : ['这几项都能自动补：doctor --fix'],
     }
   }
   return { name: 'tauri.conf.json', status: 'ok', message: `updater 配置完整（${endpoints.length} 个 endpoint）` }
@@ -127,7 +146,15 @@ function checkSigningKey(config) {
 function checkTargets(config) {
   const targets = listTargets(config)
   if (targets.length === 0) {
-    return [{ name: '发版目标', status: 'fail', message: 'release.config.json 未配置 github / gitcode' }]
+    // 只判 warn：**构建并不需要发版目标**，签名产物照样出得来。
+    // 真正的强制在上传那一步（release --upload 会在构建之前就拦下来），
+    // 免得「我只想本地打个包」的人被一片红挡住。
+    return [{
+      name: '发版目标',
+      status: 'warn',
+      message: `${NO_TARGET_MESSAGE}——只本地构建可忽略，上传前必须配`,
+      hints: NO_TARGET_HINTS,
+    }]
   }
 
   return targets.map((target) => {
@@ -259,7 +286,7 @@ export async function verifyPublishedRelease({ config, version }) {
   const expectedVersion = String(version).replace(/^v/, '')
   const targets = listTargets(config)
   if (targets.length === 0) {
-    return [{ name: '发版目标', status: 'fail', message: 'release.config.json 未配置 github / gitcode' }]
+    return [{ name: '发版目标', status: 'fail', message: NO_TARGET_MESSAGE, hints: NO_TARGET_HINTS }]
   }
 
   /** @type {CheckResult[]} */

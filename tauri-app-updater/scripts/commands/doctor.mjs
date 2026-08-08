@@ -13,7 +13,7 @@ import { log, ReleaseError, setLogScope } from '../lib/log.mjs'
 import { readJson, toRelative } from '../lib/project.mjs'
 import { printReport } from '../lib/report.mjs'
 import { readSiblingPubkey, resolveSigningKey } from '../lib/signing.mjs'
-import { latestJsonEndpoint, listTargets } from '../lib/targets.mjs'
+import { latestJsonEndpoint, listTargets, NO_TARGET_HINTS } from '../lib/targets.mjs'
 
 /**
  * @param {object} context
@@ -23,9 +23,23 @@ import { latestJsonEndpoint, listTargets } from '../lib/targets.mjs'
 export async function doctorCommand({ config, args }) {
   setLogScope('doctor')
 
+  // 每项修复彼此独立，必须各自 try：以前是顺序调用，config 修复因为「还没配发版目标」
+  // 抛错就直接退出，后面的 pubkey 同步根本没机会跑——用户只能手动把公钥粘进 tauri.conf.json。
   const fixAll = args.has('fix')
-  if (fixAll || args.has('fix-config')) syncUpdaterConfig(config)
-  if (fixAll || args.has('fix-pubkey')) syncPubkey(config)
+  const fixes = [
+    { flag: 'fix-config', run: () => syncUpdaterConfig(config) },
+    { flag: 'fix-pubkey', run: () => syncPubkey(config) },
+  ].filter((fix) => fixAll || args.has(fix.flag))
+
+  for (const fix of fixes) {
+    try {
+      fix.run()
+    } catch (error) {
+      // 修不了的那项照常报出来，但不阻断其它项，也不阻断后面的体检报告。
+      log.warn(error instanceof Error ? error.message : String(error))
+      for (const hint of error?.hints ?? []) log.detail(`→ ${hint}`)
+    }
+  }
 
   const results = await runDoctor(config, { online: !args.has('offline') })
   const { failed } = printReport(results, `${config.appName} 发版体检`)
@@ -47,10 +61,9 @@ export async function doctorCommand({ config, args }) {
  * @param {ReturnType<import('../lib/project.mjs').loadReleaseConfig>} config
  */
 function syncUpdaterConfig(config) {
+  // 没配发版目标只是**推不出 endpoints**，其余两项（产出 .sig、Windows 安装模式）
+  // 与目标无关，照样该补上。以前这里直接抛错，等于一项都不做。
   const targets = listTargets(config)
-  if (targets.length === 0) {
-    throw new ReleaseError('release.config.json 还没配置 github / gitcode，无法推导 endpoints')
-  }
 
   const tauri = readJson(config.tauriConfigPath)
   /** @type {string[]} */
@@ -67,12 +80,19 @@ function syncUpdaterConfig(config) {
   const updater = tauri.plugins.updater
 
   const existing = Array.isArray(updater.endpoints) ? updater.endpoints : []
-  const wanted = targets.map((target) => latestJsonEndpoint(target))
-  const merged = [...new Set([...existing, ...wanted])]
-  if (merged.length !== existing.length) {
-    updater.endpoints = merged
-    for (const endpoint of wanted) {
-      if (!existing.includes(endpoint)) changes.push(`+ endpoint ${endpoint}`)
+  if (targets.length === 0) {
+    updater.endpoints ??= []
+    log.warn('还没配置任何发版目标，endpoints 暂时留空')
+    for (const hint of NO_TARGET_HINTS) log.detail(hint)
+    log.detail('配好之后重跑：doctor --fix')
+  } else {
+    const wanted = targets.map((target) => latestJsonEndpoint(target))
+    const merged = [...new Set([...existing, ...wanted])]
+    if (merged.length !== existing.length) {
+      updater.endpoints = merged
+      for (const endpoint of wanted) {
+        if (!existing.includes(endpoint)) changes.push(`+ endpoint ${endpoint}`)
+      }
     }
   }
 

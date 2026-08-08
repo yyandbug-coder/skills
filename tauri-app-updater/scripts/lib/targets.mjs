@@ -95,6 +95,33 @@ export function listTargets(config) {
 }
 
 /**
+ * 「一个目标都没配」时的统一说法。
+ *
+ * 以前这里只提 github / gitcode —— 自建用户被指着去配两个他根本用不上的平台，
+ * 而真正该填的 `custom.baseUrl` 一个字都没提到。
+ */
+export const NO_TARGET_MESSAGE = 'release.config.json 里一个发版目标都没配置'
+
+export const NO_TARGET_HINTS = [
+  '三选一（也可并存）：',
+  '  github  → 填 github.owner / github.repo',
+  '  gitcode → 填 gitcode.owner / gitcode.repo',
+  '  自建服务器 → 填 custom.baseUrl（例 https://dl.example.com/releases/{tag}）',
+  '               和 custom.uploadCommand（例 rsync -av {dir}/ host:/var/www/releases/{tag}/）',
+]
+
+/**
+ * @param {ReturnType<import('./project.mjs').loadReleaseConfig>} config
+ */
+export function assertHasTarget(config) {
+  const targets = listTargets(config)
+  if (targets.length === 0) {
+    throw new ReleaseError(NO_TARGET_MESSAGE, { hints: NO_TARGET_HINTS })
+  }
+  return targets
+}
+
+/**
  * 提交进仓库的 releases/latest.json 用哪个目标的 URL 规则。
  * 不指定就取第一个已配置的——但那是按字母序的偶然结果，所以配置里应显式写明。
  *
@@ -102,7 +129,7 @@ export function listTargets(config) {
  * @param {ReturnType<typeof listTargets>} targets
  */
 export function pickPrimaryTarget(config, targets) {
-  if (targets.length === 0) throw new ReleaseError('release.config.json 未配置 github / gitcode')
+  if (targets.length === 0) throw new ReleaseError(NO_TARGET_MESSAGE, { hints: NO_TARGET_HINTS })
   const named = targets.find((target) => target.name === config.primaryTarget)
   return named ?? targets[0]
 }

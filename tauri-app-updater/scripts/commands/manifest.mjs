@@ -10,7 +10,7 @@ import { collectArtifacts, resolvePlatforms } from '../lib/platforms.mjs'
 import { log, ReleaseError, setLogScope } from '../lib/log.mjs'
 import { readProjectVersion, resolveArtifactDir, toRelative } from '../lib/project.mjs'
 import { resolveNotesFromProject } from '../lib/notes.mjs'
-import { listTargets, pickPrimaryTarget } from '../lib/targets.mjs'
+import { listTargets, NO_TARGET_HINTS, NO_TARGET_MESSAGE, pickPrimaryTarget } from '../lib/targets.mjs'
 
 /**
  * @param {object} context
@@ -33,7 +33,7 @@ export function manifestCommand({ config, args }) {
   for (const platformId of skipped) log.warn(`${platformId} 没有带 .sig 的 updater 包`)
 
   const targets = listTargets(config)
-  if (targets.length === 0) throw new ReleaseError('release.config.json 未配置 github / gitcode')
+  if (targets.length === 0) throw new ReleaseError(NO_TARGET_MESSAGE, { hints: NO_TARGET_HINTS })
 
   const artifactDir = resolveArtifactDir(config, version)
   const manifestRoot = join(artifactDir, '.manifests')
