@@ -4,3 +4,7 @@ Thumbs.db
 *.log
 .env
 .env.*
+
+# 本地编辑器配置，不进公开仓库
+.vscode/
+.idea/

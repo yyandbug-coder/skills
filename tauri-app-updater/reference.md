@@ -1,334 +1,211 @@
-# Tauri 自动更新 — 模块参考
+# tauri-app-updater — 配置参考
 
 ## 目录结构
 
-### Skill（全局，所有项目共用）
+Skill（每台机器装一次，所有项目共用）：
 
 ```
-~/.agents/skills/tauri-app-updater/   # npx skills add 安装位置（Cursor）
-├── SKILL.md
-├── pitfalls.md
-├── reference.md
+tauri-app-updater/
+├── SKILL.md · reference.md · pitfalls.md
 ├── templates/
 │   ├── release.config.json
-│   ├── capabilities/mobile-update.json
-│   └── src/
-│       ├── lib/mobile-update.ts
-│       └── hooks/useMobileUpdate.ts
+│   └── updater-skill.mjs          # init 写进项目的薄 wrapper
 └── scripts/
-    ├── init-project.mjs
-    ├── release-interactive.mjs
-    ├── release.mjs
-    ├── generate-latest-json.mjs
-    ├── generate-mobile-update-config.mjs
-    ├── github-upload-release.mjs
-    ├── gitcode-upload-release.mjs
-    ├── upload-release.mjs
-    ├── git-push-all.mjs
-    └── lib/
-        ├── skill-paths.mjs
-        ├── load-release-config.mjs
-    ├── release-targets.mjs
-    ├── release-platforms.mjs
-    ├── release-artifacts.mjs
-        └── import-from-project.mjs
+    ├── cli.mjs                    # 唯一入口
+    ├── commands/                  # wizard / release / doctor / manifest / upload / verify / init
+    └── lib/                       # project · signing · platforms · manifest · targets · git · notes · doctor · http · upload/
 ```
 
-### 项目（每个 Tauri 应用）
+项目侧只有两样东西：
 
 ```
 project/
 ├── release.config.json
-├── releases/
-│   ├── latest.json
-│   └── artifacts/
-├── scripts/
-│   └── updater-skill.mjs    # 由 init-project.mjs 生成，转发到 Skill
-├── docs/RELEASE.md          # 可选，项目发版说明
-├── src-tauri/
-│   ├── tauri.conf.json
-│   ├── Cargo.toml
-│   ├── capabilities/default.json
-│   └── src/app_updater.rs
-└── src/
-    ├── lib/
-    │   ├── app-updater.ts
-    │   ├── mobile-update.ts
-    │   └── mobile-update-config.generated.ts
-    └── hooks/
-        ├── useAppUpdater.ts
-        └── useMobileUpdate.ts
+└── scripts/updater-skill.mjs      # 由 init 生成
 ```
 
-## 接入命令
+> **不要把 Skill 的 `scripts/` 复制进项目**。wrapper 的解析顺序是**全局优先**，就是为了避免
+> 项目里的陈旧副本悄悄盖住已更新的 Skill。要指定位置用 `TAURI_UPDATER_SKILL_ROOT`。
 
-```bash
-# 1. 安装 Skill（每台电脑一次）
-npx skills add yyandbug-coder/skills --skill tauri-app-updater -g -y
-
-# 2. 接入项目（每个项目一次）
-node ~/.agents/skills/tauri-app-updater/scripts/init-project.mjs
-pnpm install
-```
-
-仓库：[github.com/yyandbug-coder/skills](https://github.com/yyandbug-coder/skills)
-
-## release.config.json 字段
+## release.config.json
 
 ```json
 {
   "appName": "Your App",
-  "versionBump": "pre",
-  "tauriBuildCommand": "pnpm tauri build",
-  "desktop": {
-    "defaultBuildCommand": "pnpm tauri build",
-    "windowsBuildCommand": "pnpm tauri build -- --target x86_64-pc-windows-msvc",
-    "macosBuildCommand": "pnpm tauri build -- --target aarch64-apple-darwin",
-    "linuxBuildCommand": "pnpm tauri build -- --target x86_64-unknown-linux-gnu"
-  },
+  "primaryTarget": "gitcode",
   "signing": {
-    "privateKeyPath": "~/.tauri/<app-name>.key",
+    "privateKeyPath": ".secrets/app.key",
     "privateKeyPassword": "",
-    "envKeyVar": "YOUR_APP_SIGNING_PRIVATE_KEY",
-    "envPasswordVar": "YOUR_APP_SIGNING_PRIVATE_KEY_PASSWORD"
+    "envKeyVar": "TAURI_SIGNING_PRIVATE_KEY",
+    "envPasswordVar": "TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
   },
-  "github": {
-    "owner": "<github-owner>",
-    "repo": "<repo>",
-    "defaultBranch": "master"
+  "build": {
+    "default": "pnpm tauri build",
+    "darwin-universal": "pnpm tauri build --target universal-apple-darwin"
   },
-  "gitcode": {
-    "owner": "<owner>",
-    "repo": "<repo>",
-    "apiUrl": "https://api.gitcode.com/api/v5",
-    "defaultBranch": "master"
-  },
-  "mobile": {
-    "androidBuildCommand": "pnpm tauri android build --target aarch64 --apk --aab",
-    "iosBuildCommand": "pnpm tauri ios build",
-    "artifactDirs": [],
-    "update": {
-      "target": "gitcode",
-      "versionSource": "latest-json",
-      "releasePageUrl": "",
-      "versionCheckUrl": "",
-      "releaseApiUrl": ""
+  "notesCommand": "node scripts/release-notes.mjs --notes {version}",
+  "checkCommands": ["node scripts/release-notes.mjs --check {version}"],
+  "github": { "owner": "", "repo": "", "defaultBranch": "master" },
+  "gitcode": { "owner": "", "repo": "", "apiUrl": "https://api.gitcode.com/api/v5", "defaultBranch": "master" }
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `appName` | 缺省取 `tauri.conf.json` 的 `productName` |
+| `primaryTarget` | 提交进仓库的 `releases/latest.json` 用哪个目标的 URL 规则；不填按配置顺序取第一个 |
+| `signing.privateKeyPath` | 相对项目根或绝对路径，支持 `~`。**找不到就直接报错**，不会 fallback 到别处 |
+| `signing.envKeyVar` | CI 里把私钥**正文**放进该变量即可（内容含 `untrusted comment` 时按正文处理） |
+| `build.<平台id>` | 该平台的构建命令；`{target}` 会替换成 rust triple。缺省按探测到的包管理器自动拼 |
+| `build.default` | 所有未单独配置的平台用它 |
+| `notesCommand` | 取发布说明的命令，stdout 即 notes。`{version}` / `{tag}` 会被替换 |
+| `checkCommands` | 发版前必须通过的项目自定义校验（典型：changelog 有本版本条目）。任一失败即中止 |
+
+**签名私钥由 Skill 自动注入构建子进程**（先剥掉继承来的 `TAURI_SIGNING_*` 再写入本项目的），
+所以 `build` 里直接写 `pnpm tauri build` 即可，不需要项目再包一层注入签名的脚本。
+
+## 平台矩阵
+
+`--platform` 可多选（逗号分隔或重复传参）。
+
+| id | 构建 target | latest.json 的 key |
+|----|-------------|-------------------|
+| `host` | 不指定（当前主机） | 按本机 os-arch 推断 |
+| `windows-x86_64` | `x86_64-pc-windows-msvc` | `windows-x86_64` |
+| `windows-aarch64` | `aarch64-pc-windows-msvc` | `windows-aarch64` |
+| `darwin-aarch64` | `aarch64-apple-darwin` | `darwin-aarch64` |
+| `darwin-x86_64` | `x86_64-apple-darwin` | `darwin-x86_64` |
+| `darwin-universal` | `universal-apple-darwin` | **`darwin-aarch64` + `darwin-x86_64`** |
+| `linux-x86_64` | `x86_64-unknown-linux-gnu` | `linux-x86_64` |
+
+简写：`desktop`→`host`，`windows`→`windows-x86_64`，`macos`→`darwin-universal`，`linux`→`linux-x86_64`。
+
+**macOS 建议直接发 `darwin-universal`**：一个包覆盖两种架构，且是唯一能让 Intel 与 Apple Silicon
+都收到更新的做法。需要先 `rustup target add x86_64-apple-darwin aarch64-apple-darwin`。
+
+### updater 包的识别顺序
+
+| 平台 | 认哪个文件 |
+|------|-----------|
+| Windows | `*-setup.exe`（NSIS，优先）→ `*.msi`（WiX） |
+| macOS | `*.app.tar.gz` |
+| Linux | `*.AppImage.tar.gz` → `*.AppImage` |
+
+必须有同名 `.sig` 才会进 manifest；`.dmg` 只作为人工下载附件上传，不参与自动更新。
+
+## 自建更新服务器（`custom`）
+
+发版流水线里跟托管方绑定的只有两处：**安装包 URL 规则**和**上传动作**。前者是个模板，
+后者各家（S3 / OSS / rsync / scp / curl）完全不同 —— 所以 URL 内建，上传交给你的命令。
+构建、签名、验签名、manifest、发布后探活全部照常。
+
+```json
+"custom": {
+  "label": "自建服务器",
+  "baseUrl": "https://dl.example.com/releases/{tag}",
+  "endpoint": "https://dl.example.com/releases/latest.json",
+  "uploadCommand": "rsync -av --delete {dir}/ deploy@host:/var/www/releases/{tag}/"
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `baseUrl` | 安装包所在目录。支持 `{tag}`（`v1.2.0`）/ `{version}`（`1.2.0`）；不写占位就是固定目录（每次覆盖，适合只留最新版的部署） |
+| `endpoint` | `latest.json` 地址。留空则自动取 `baseUrl` 去掉版本段后的同级 `latest.json` |
+| `uploadCommand` | 上传命令。占位：`{dir}` 待上传目录、`{version}`、`{tag}`、`{baseUrl}`。**失败即中止发版** |
+| `label` | 体检/日志里的显示名 |
+
+`{dir}` 是一个**干净的待上传目录**（`releases/v{version}/.upload/`），里面只有该传的文件，
+文件名与 manifest 里的 URL 严格一致，`latest.json` 排在最后。直接整目录推走即可：
+
+```bash
+aws s3 sync {dir}/ s3://bucket/releases/{tag}/ --delete
+ossutil cp -r {dir}/ oss://bucket/releases/{tag}/ --update
+scp -r {dir}/. deploy@host:/var/www/releases/{tag}/
+```
+
+鉴权（ssh key / aws 凭证 / token header）在你的命令内部，Skill 不碰也不该碰。
+
+`custom` 可以和 `github` / `gitcode` 并存 —— 三个目标各拿一份指向自己的 `latest.json`，
+`tauri.conf.json` 的 `endpoints` 按顺序容灾。
+
+### 静态 vs 动态 manifest
+
+插件两种都认，`doctor` / `verify` 也都认：
+
+| | 形状 | 适用 |
+|---|---|---|
+| 静态 | `{ version, platforms: { "darwin-aarch64": { url, signature } } }` | 对象存储 / Release 附件，本 Skill 生成的就是这种 |
+| 动态 | `{ version, url, signature }` | 自建服务端按请求里的 `{{target}}` / `{{arch}}` / `{{current_version}}` 自己挑包，还能返回 **204 表示无更新** |
+
+动态的好处是能做灰度（按 current_version 或百分比决定给不给更新），代价是要自己写服务端。
+Skill 只负责生成静态那份；你若改用动态，`verify` 会识别并只探测服务端返回的那一条 URL。
+
+## 包管理器
+
+按 `package.json` 的 `packageManager` 字段 → lockfile → 默认 `pnpm` 探测，影响默认构建命令与所有提示文案。
+
+**npm 的参数透传是特例**：`npm run tauri build --target X` 里的 `--target` 会被 npm 自己当成选项吃掉，
+必须写成 `npm run tauri -- build --target X`。Skill 生成的命令已按此处理，手写 `build.*` 时也要注意。
+
+## tauri.conf.json
+
+`doctor --fix`（或 `--fix-config`）会按 `release.config.json` 里已配置的 owner/repo 自动补出下面这份。
+只做加法：已有的 endpoints 会保留并去重（自建镜像不会被抹掉）。
+
+```json
+{
+  "bundle": { "createUpdaterArtifacts": true },
+  "plugins": {
+    "updater": {
+      "pubkey": "<.secrets/app.key.pub 的内容>",
+      "endpoints": [
+        "https://api.gitcode.com/api/v5/repos/{owner}/{repo}/releases/latest/attach_files/latest.json/download",
+        "https://github.com/{owner}/{repo}/releases/latest/download/latest.json"
+      ],
+      "windows": { "installMode": "passive" }
     }
   }
 }
 ```
 
-`envKeyVar` / `envPasswordVar` 可选；未设置时默认使用 `TAURI_SIGNING_PRIVATE_KEY`。
+`endpoints` 按顺序尝试，任一返回可解析的 manifest 即停。`doctor` 会逐个实拉，**死端点会被标红** ——
+主端点正常时没人会发现备用端点早就 404 了。
 
-### 桌面分平台构建（`desktop`）
+capabilities 需要：`updater:default`、`process:allow-restart`。
 
-| 字段 | 说明 |
-|------|------|
-| `defaultBuildCommand` | `--platform desktop` 时执行（优先于 `tauriBuildCommand`） |
-| `windowsBuildCommand` | `--platform windows` 时执行 |
-| `macosBuildCommand` | `--platform macos` 时执行 |
-| `linuxBuildCommand` | `--platform linux` 时执行 |
+## URL 规则
 
-`--platform desktop` 默认使用 `desktop.defaultBuildCommand`，否则 `tauriBuildCommand`（须为**仅桌面**构建，如 `pnpm tauri build`）。若配置了 `pnpm tauri:deploy` 等一体脚本，Skill 会按所选平台自动追加 `--skip-android` 或只跑移动端命令。
+| | latest.json 端点 | 安装包 URL |
+|---|---|---|
+| GitHub | `https://github.com/{o}/{r}/releases/latest/download/latest.json` | `https://github.com/{o}/{r}/releases/download/v{ver}/{file}` |
+| GitCode | `{api}/repos/{o}/{r}/releases/latest/attach_files/latest.json/download` | `{api}/repos/{o}/{r}/releases/v{ver}/attach_files/{file}/download` |
 
-### 移动端字段（`mobile`）
+文件名一律 `encodeURIComponent`（应用名普遍带空格）。
 
-| 字段 | 说明 |
-|------|------|
-| `androidBuildCommand` | Android 构建命令，默认 `pnpm tauri android build --target aarch64 --apk --aab`。CLI 2.11+ 的 `--apk`/`--aab` 是 Tauri 子命令参数，**禁止**写在 `--` 之后（否则会误传给 cargo 并报 `unexpected argument '--apk'`） |
-| `iosBuildCommand` | iOS 构建命令，默认 `pnpm tauri ios build` |
-| `artifactDirs` | 额外搜索 `.apk` / `.aab` / `.ipa` 的目录（相对项目根或绝对路径） |
-
-移动端产物默认从以下路径收集：
-
-- Android：`src-tauri/gen/android/app/build/outputs/`（release 构建，优先 universal、已签名 APK）
-- iOS：`src-tauri/gen/apple/build/`（`.ipa`）
-
-复制到 `releases/artifacts/` 时会自动重命名为 `{AppName}_{version}_android-universal.apk` 等，便于 Release 页面识别与上传过滤。
-
-`--platform` 支持**多选**（逗号分隔或重复传参）：
-
-| 平台 | 说明 |
-|------|------|
-| `desktop` | 桌面默认构建（`tauriBuildCommand`，当前主机）；产物在 `target/release/bundle/`。**本机默认 build + 移动端请优先选此项**，勿只选 `macos` |
-| `windows` | Windows x86_64 |
-| `macos` | macOS aarch64 **交叉编译**（`aarch64-apple-darwin/release/bundle`）；本机 `pnpm tauri build` 未指定 target 时**不要**只选此项 |
-| `linux` | Linux x86_64 |
-| `android` | Android APK + AAB |
-| `ios` | iOS IPA |
-| `mobile` | 简写：`android` + `ios` |
-| `all` | 简写：`desktop` + `android` + `ios` |
-
-> **本机发版 macOS + iOS**：向导中勾选 **`desktop` + `ios`**，不要只勾 `macos` + `ios`，否则 `.app.tar.gz` 可能未收集进 `releases/v{version}/`，导致 updater 下载 HTTP 500。详见 [pitfalls.md — 发版注意事项](pitfalls.md#发版注意事项checklist)。
-
-```bash
-# 仅 Windows + Android
-pnpm release:cli --platform windows,android --skip-bump --upload
-
-# 多参数写法
-pnpm release:cli --platform desktop --platform ios --part patch
-
-# 全部
-pnpm release:cli --platform all --upload
-```
-
-可在 `release.config.json` → `desktop` 中自定义各平台构建命令。
-
-仅移动端发版时**不生成** `latest.json`（Tauri updater 仅用于桌面端）。
-
-#### 移动端更新（跳转 Release 页）
-
-| 字段 | 说明 |
-|------|------|
-| `update.target` | 检查版本与跳转的目标平台：`gitcode` / `github`，默认取已配置的主平台 |
-| `update.versionSource` | `latest-json`（默认，读 Release 中的 latest.json）或 `release-api`（读 latest Release 的 tag_name） |
-| `update.releasePageUrl` | 自定义 Release 列表页 URL，留空则按 owner/repo 自动生成 |
-| `update.versionCheckUrl` | 自定义 latest.json 地址，留空则自动生成 |
-| `update.releaseApiUrl` | 自定义 Release API 地址，留空则自动生成 |
-
-生成前端配置：
-
-```bash
-pnpm release:mobile-config
-# 输出 src/lib/mobile-update-config.generated.ts
-```
-
-Release 页 URL 示例：
-
-- GitCode 列表：`https://gitcode.com/{owner}/{repo}/releases`
-- GitCode 指定版本：`https://gitcode.com/{owner}/{repo}/releases/tag/v{version}`
-- GitHub 最新：`https://github.com/{owner}/{repo}/releases/latest`
-- GitHub 指定版本：`https://github.com/{owner}/{repo}/releases/tag/v{version}`
-
-## 移动端更新（前端）
-
-`init-project.mjs` 会写入：
-
-```
-src/lib/mobile-update.ts
-src/lib/mobile-update-config.generated.ts   # pnpm release:mobile-config 生成
-src/hooks/useMobileUpdate.ts
-```
-
-### 权限
-
-在 `src-tauri/capabilities/` 中加入 `opener:default`（参考 `templates/capabilities/mobile-update.json`），并安装：
-
-```bash
-pnpm add @tauri-apps/plugin-opener
-```
-
-Rust 侧注册（`lib.rs`）：
+## Rust 侧
 
 ```rust
-#[cfg(mobile)]
-app.handle().plugin(tauri_plugin_opener::init())?;
+// Windows 上 install() 是 on_before_exit() → ShellExecuteW → std::process::exit(0)。
+// 不注册钩子，数据库 flush / 热键注销 / 配置回写全部跳过。
+tauri_plugin_updater::Builder::new()
+    .on_before_exit(|| { /* 关数据库、注销全局热键、落盘配置 */ })
+    .build()
 ```
 
-### Hook 用法
+前端 `downloadAndInstall()` 之后：
 
-```tsx
-import { useMobileUpdate } from '@/hooks/useMobileUpdate'
+- **macOS**：包已就地替换，需要自己 `relaunch()`
+- **Windows**：进程已被 `exit(0)` 结束，`relaunch()` 那行**永远执行不到**；NSIS 靠 `/UPDATE` 参数自行重启
 
-function AboutMobileUpdate() {
-  const { phase, latestVersion, hasUpdate, checkAndOpenRelease, openReleasePage } = useMobileUpdate()
+## 环境变量
 
-  return (
-    <button onClick={() => checkAndOpenRelease()}>
-      {phase === 'checking' ? '检查中…' : hasUpdate ? `前往下载 v${latestVersion}` : '检查更新'}
-    </button>
-  )
-}
-```
+| 变量 | 用途 |
+|------|------|
+| `GITHUB_TOKEN` / `GH_TOKEN` | GitHub 上传（需 contents:write） |
+| `GITCODE_TOKEN` | GitCode 上传 |
+| `TAURI_SIGNING_PRIVATE_KEY` | 私钥正文或路径，覆盖配置 |
+| `TAURI_UPDATER_SKILL_ROOT` | 指定 Skill 位置 |
+| `TAURI_UPDATER_PROJECT_ROOT` | 指定项目根 |
 
-桌面 / 移动分流示例：
-
-```tsx
-import { platform } from '@tauri-apps/plugin-os'
-
-const isMobile = platform() === 'android' || platform() === 'ios'
-
-// isMobile ? useMobileUpdate() : useAppUpdater()
-```
-
-## latest.json URL 格式
-
-每个平台 Release 中的 `latest.json` 应使用**该平台自身**的下载地址：
-
-- **GitCode Endpoint**（检查更新）：
-  `https://api.gitcode.com/api/v5/repos/{owner}/{repo}/releases/latest/attach_files/latest.json/download`
-- **GitCode 安装包 URL**：
-  `https://api.gitcode.com/api/v5/repos/{owner}/{repo}/releases/v{version}/attach_files/{encodeURIComponent(fileName)}/download`
-- **GitHub Endpoint**：
-  `https://github.com/{owner}/{repo}/releases/latest/download/latest.json`
-- **GitHub 安装包 URL**：
-  `https://github.com/{owner}/{repo}/releases/download/v{version}/{fileName}`
-
-`tauri.conf.json` 可配置多个 `endpoints`，应用会依次尝试。
-
-## Rust 命令注册
-
-```rust
-// lib.rs
-.manage(app_updater::PendingAppUpdate(Mutex::new(None)))
-.invoke_handler(tauri::generate_handler![
-    app_updater::check_app_update_cmd,
-    app_updater::download_install_app_update_cmd,
-])
-```
-
-## 前端 Hook 模式
-
-- `useAppUpdater`：phase、checkForUpdate、installUpdate
-- `useStartupUpdateCheck`：启动静默检查 + toast
-- `app-updater-pending.ts`：跨窗口共享 pending 更新信息
-
-## package.json scripts
-
-由 `init-project.mjs` 自动合并，等价于：
-
-```json
-{
-  "release": "node scripts/updater-skill.mjs release-interactive.mjs",
-  "create:release": "node scripts/updater-skill.mjs release-interactive.mjs",
-  "release:cli": "node scripts/updater-skill.mjs release.mjs",
-  "release:publish": "node scripts/updater-skill.mjs release.mjs --publish",
-  "release:upload": "node scripts/updater-skill.mjs upload-release.mjs",
-  "release:upload:github": "node scripts/updater-skill.mjs github-upload-release.mjs",
-  "release:upload:gitcode": "node scripts/updater-skill.mjs gitcode-upload-release.mjs",
-  "git:push-all": "node scripts/updater-skill.mjs git-push-all.mjs",
-  "release:json": "node scripts/updater-skill.mjs generate-latest-json.mjs",
-  "release:mobile-config": "node scripts/updater-skill.mjs generate-mobile-update-config.mjs"
-}
-```
-
-## 发版后验证清单
-
-- [ ] `curl` latest.json 返回正确 `version`
-- [ ] `platforms.windows-x86_64.url` 可 200 下载
-- [ ] `signature` 非空
-- [ ] 旧版安装包可检查并下载更新
-- [ ] 开发模式 `pnpm tauri dev` 不测试 updater
-
-## CI 示例（非交互）
-
-```yaml
-- run: pnpm release:cli --skip-bump --upload --notes "Release ${{ github.ref_name }}"
-  env:
-    GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
-    RELEASE_BASE_URL: https://api.gitcode.com/api/v5/repos/<owner>/<repo>/releases/${{ github.ref_name }}/attach_files
-```
-
-生成 `latest.json` 时：
-
-```yaml
-- run: node scripts/updater-skill.mjs generate-latest-json.mjs --version "$VERSION" --bundle-root artifacts
-```
-
-## 签名密钥生成
-
-```bash
-tauri signer generate -w ~/.tauri/<app-name>.key
-tauri signer sign -w ~/.tauri/<app-name>.key -f <file>
-# pubkey 内容写入 tauri.conf.json plugins.updater.pubkey
-```
+项目根的 `.env` 会被自动读取（不覆盖已有的 `process.env`）。`.env` 必须进 `.gitignore`。

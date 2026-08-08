@@ -1,6 +1,0 @@
-{
-  "identifier": "mobile-update-capability",
-  "description": "移动端跳转 Release 页（@tauri-apps/plugin-opener）",
-  "windows": ["main"],
-  "permissions": ["opener:default"]
-}

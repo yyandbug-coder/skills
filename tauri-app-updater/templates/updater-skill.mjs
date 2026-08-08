@@ -1,49 +1,56 @@
 #!/usr/bin/env node
 /**
- * Thin wrapper: forwards release commands to tauri-app-updater Skill.
- * Resolves skill from project paths first, then global install paths.
- * (ASCII-only source: avoids Windows encoding parse errors in .mjs files.)
+ * Thin wrapper: forwards release commands to the tauri-app-updater skill.
+ *
+ * Resolution order is GLOBAL FIRST on purpose. The previous wrapper preferred a
+ * project-local copy, so a stale vendored copy silently shadowed the updated
+ * skill and produced confusing "function is not defined" style failures.
+ * Set TAURI_UPDATER_SKILL_ROOT to pin an explicit location.
+ *
+ * ASCII-only source: .mjs files re-encoded to GBK/UTF-16 on Windows fail to parse.
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-const skillScript = process.argv[2]
-if (!skillScript) {
-  console.error('[updater-skill] missing skill script name (e.g. release-interactive.mjs)')
-  process.exit(1)
-}
+const SKILL = 'tauri-app-updater'
+const ENTRY = join('scripts', 'cli.mjs')
 
-function findSkillRoot() {
+function candidates() {
   const home = homedir()
   const cwd = process.cwd()
-  const candidates = [
-    join(cwd, 'skills/tauri-app-updater'),
-    join(cwd, '.agents/skills/tauri-app-updater'),
-    join(cwd, '.cursor/skills/tauri-app-updater'),
-    join(home, '.agents/skills/tauri-app-updater'),
-    join(home, '.cursor/skills/tauri-app-updater'),
-  ]
-  for (const root of candidates) {
-    if (existsSync(join(root, 'scripts', skillScript))) return root
-  }
-  return ''
+  const list = []
+  if (process.env.TAURI_UPDATER_SKILL_ROOT) list.push(process.env.TAURI_UPDATER_SKILL_ROOT)
+  list.push(
+    join(home, '.agents', 'skills', SKILL),
+    join(home, '.claude', 'skills', SKILL),
+    join(home, '.cursor', 'skills', SKILL),
+    join(cwd, '.claude', 'skills', SKILL),
+    join(cwd, '.cursor', 'skills', SKILL),
+    join(cwd, 'skills', SKILL),
+  )
+  return list
 }
 
-const skillRoot = findSkillRoot()
-if (!skillRoot) {
-  console.error('[updater-skill] tauri-app-updater skill not found\n')
+const root = candidates().find((dir) => existsSync(join(dir, ENTRY)))
+
+if (!root) {
+  console.error(`[updater-skill] ${SKILL} not found in any of:`)
+  for (const dir of candidates()) console.error(`  ${dir}`)
+  console.error('')
   console.error('  Install once per machine:')
-  console.error('    npx skills add yyandbug-coder/skills --skill tauri-app-updater -g -y')
-  console.error('\n  Wire project once:')
-  console.error('    node skills/tauri-app-updater/scripts/init-project.mjs')
-  console.error('    (or: node %USERPROFILE%\\.agents\\skills\\tauri-app-updater\\scripts\\init-project.mjs)')
+  console.error(`    npx skills add yyandbug-coder/skills --skill ${SKILL} -g -y`)
+  console.error('  Or point at a local checkout:')
+  console.error(`    TAURI_UPDATER_SKILL_ROOT=/path/to/${SKILL} pnpm release`)
   process.exit(1)
 }
 
-const scriptPath = join(skillRoot, 'scripts', skillScript)
-const result = spawnSync('node', [scriptPath, ...process.argv.slice(3)], {
+if (process.env.TAURI_UPDATER_SKILL_DEBUG) {
+  console.error(`[updater-skill] using ${root}`)
+}
+
+const result = spawnSync(process.execPath, [join(root, ENTRY), ...process.argv.slice(2)], {
   cwd: process.cwd(),
   stdio: 'inherit',
   env: process.env,
